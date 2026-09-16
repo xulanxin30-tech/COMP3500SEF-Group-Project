@@ -1,7 +1,8 @@
--- 物流管理系统 · 数据库建表模板 / Database schema template
--- 负责：CEN Yin Chi
--- 说明：兼容 MySQL / PostgreSQL / SQLite；在数据库客户端执行本文件即可建表。
--- 注意：09-23 设计冻结后表结构只减不加，改表前请与组长确认。
+-- Logistics Management System - example database schema.
+-- Responsibilities and provisional dates: docs/PROJECT.md.
+-- Checked with SQLite; other database engines have not been verified.
+-- Review schema changes with affected module owners; see CONTRIBUTING.md.
+-- The sample inserts add new rows each time this script is run.
 
 CREATE TABLE IF NOT EXISTS customers (
   id         INTEGER PRIMARY KEY,              -- 客户ID / customer id
