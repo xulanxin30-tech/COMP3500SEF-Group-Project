@@ -1,7 +1,8 @@
--- Logistics Management System · Database schema template
--- Owner: CEN Yin Chi
--- Compatible with MySQL / PostgreSQL / SQLite; run this file in your database client to create the tables.
--- Note: after the 09-23 design freeze, tables can only be cut, not changed. Confirm with the team lead before altering.
+-- Logistics Management System - example database schema.
+-- Responsibilities and provisional dates: docs/PROJECT.md.
+-- Checked with SQLite; other database engines have not been verified.
+-- Review schema changes with affected module owners; see CONTRIBUTING.md.
+-- The sample inserts add new rows each time this script is run.
 
 CREATE TABLE IF NOT EXISTS customers (
   id         INTEGER PRIMARY KEY,              -- customer id
