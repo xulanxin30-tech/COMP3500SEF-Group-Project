@@ -1,19 +1,19 @@
 # -*- coding: utf-8 -*-
-"""物流管理系统 · 测试模板 / Test template
-负责：ZHANGZHIYUAN
-说明：Python 标准库 unittest，零依赖。
-运行：python -m unittest tests/test_example.py
+"""Logistics Management System · Test template
+Owner: ZHANGZHIYUAN
+Note: Python standard library unittest, zero dependencies.
+Run: python -m unittest tests/test_example.py
 """
 import unittest
 
 
 def calc_freight(weight_kg):
-    """示例业务函数：运费计算 / sample: freight calculation (HKD per kg)"""
+    """Sample business function: freight calculation (HKD per kg)"""
     return weight_kg * 2.5 if weight_kg > 0 else 0
 
 
 class TestFreight(unittest.TestCase):
-    """运费函数测试 / freight function tests"""
+    """Freight function tests"""
 
     def test_normal(self):
         self.assertEqual(calc_freight(10), 25.0)
