@@ -142,8 +142,10 @@ git pull --ff-only origin main
 ```
 
 The review requirement is a team workflow rule. GitHub branch protection and
-approval enforcement have not been verified, and this repository has no CI
-workflow configured. Reviewers must check the supplied validation evidence.
+approval enforcement have not been verified. The CI workflow runs the Python
+tests, builds and starts the Docker image, and checks the published health
+endpoint. Reviewers must check its results and the supplied validation evidence;
+these checks do not establish coverage of the complete business workflow.
 
 ## Browser workflow for small documentation edits
 

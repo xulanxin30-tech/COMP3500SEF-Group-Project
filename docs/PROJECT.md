@@ -19,7 +19,7 @@ permission to edit a folder. Update this table when the team agrees a change.
 | XIE Jiayan | Backend development | API implementation, business logic and planned authentication; `backend/` |
 | CEN Yin Chi | Database | Data modelling, schema and planned migrations; `database/` |
 | ZHANGZHIYUAN | Testing / QA | Test planning, cases and quality evidence; `tests/` |
-| Aw Chun Yin | Documentation / DevOps | Documentation and repository support, with CI/CD and deployment planned |
+| Aw Chun Yin | Documentation / DevOps | Documentation and repository support, including CI and Docker packaging; deployment planned |
 
 Some responsibilities concern future work. Their presence here does not mean
 that a design deliverable, deployment folder or CI workflow already exists.
@@ -114,5 +114,18 @@ an official Logbook or submission format.
 
 ## Recorded entries
 
-No task, progress or decision entries have been added to this document yet.
-Replace this sentence when adding the first factual entry.
+### TASK-container-ci: Fix container access and verify backend startup
+
+- Owner: XIE Jiayan / GeorgeXie2333
+- Contributors / affected module owners: Backend (XIE Jiayan), QA (ZHANGZHIYUAN),
+  DevOps (Aw Chun Yin)
+- Expected result: The Docker backend accepts requests through its published
+  port; CI detects backend startup and API regressions.
+- Acceptance checks: Default local listening stays on loopback; Docker listening
+  uses all container interfaces; API and listen-address tests pass; the image
+  starts and returns the expected health JSON through its published port in CI.
+- Due date: Not yet agreed
+- Next progress update: PR submission and CI result
+- Status: Prepared for PR review; completion requires review and merge.
+- Evidence: The PR linking this entry records the two fix commits, local checks
+  and GitHub Actions result.

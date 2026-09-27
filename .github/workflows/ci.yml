@@ -9,6 +9,7 @@ on:
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
       - name: Checkout code
@@ -24,3 +25,24 @@ jobs:
 
       - name: Build Docker image
         run: docker build -t logistics-system:test .
+
+      - name: Start backend container
+        id: start-container
+        run: docker run --detach --name logistics-system-smoke --publish 127.0.0.1:8000:8000 logistics-system:test
+
+      - name: Check container health through the published port
+        run: |
+          curl --fail --silent --show-error \
+            --retry 10 --retry-delay 1 --retry-all-errors \
+            --connect-timeout 2 --max-time 5 \
+            --output "$RUNNER_TEMP/lms-health.json" \
+            http://127.0.0.1:8000/api/health
+          python -c 'import json, sys; assert json.load(open(sys.argv[1])) == {"status": "ok", "service": "lms-backend"}' "$RUNNER_TEMP/lms-health.json"
+
+      - name: Show container logs
+        if: always() && steps.start-container.outcome == 'success'
+        run: docker logs logistics-system-smoke
+
+      - name: Remove backend container
+        if: always() && steps.start-container.outcome == 'success'
+        run: docker rm --force logistics-system-smoke

@@ -17,8 +17,8 @@ checked separately; the complete logistics workflow has not been implemented.
 | Frontend | Static HTML, CSS and JavaScript; a sign-in form with an alert button | Authentication, business screens and API integration |
 | Backend | Python standard-library HTTP server with two GET endpoints and fixed example orders | Business operations, validation, authentication and persistence |
 | Database | SQL definitions for four tables and two sample inserts; checked with SQLite | Database selection, application integration and a migration approach |
-| Tests | Three `unittest` examples for a function defined inside the test file | Tests of application code, API integration and the complete user workflow |
-| Delivery | Source files and team documentation | CI/CD configuration and deployment |
+| Tests | HTTP API and listen-address regression tests; three freight examples | Database, frontend and complete user-workflow tests |
+| Delivery | Source files, team documentation, Dockerfile and GitHub Actions build/test workflow | Deployment and release automation |
 
 There is no database connection in the backend and no API call in the active
 frontend code. The sign-in form does not check credentials. Passing the example
@@ -39,8 +39,11 @@ tests does not demonstrate that the planned business features work.
 ```text
 .
 ├── .github/
-│   └── pull_request_template.md
+│   ├── pull_request_template.md
+│   └── workflows/
+│       └── ci.yml
 ├── .gitignore
+├── Dockerfile
 ├── README.md
 ├── CONTRIBUTING.md
 ├── CODE_OF_CONDUCT.md
@@ -56,6 +59,7 @@ tests does not demonstrate that the planned business features work.
 ├── database/
 │   └── schema.sql
 └── tests/
+    ├── test_backend.py
     └── test_example.py
 ```
 
@@ -126,7 +130,7 @@ The image sets `LMS_HOST=0.0.0.0` so the server accepts requests forwarded to
 the container. The published port is accessible locally at the API URLs above.
 Stop the container with **Ctrl+C**.
 
-### Example tests
+### Tests
 
 Windows PowerShell:
 
@@ -140,9 +144,17 @@ macOS/Linux:
 python3 -m unittest discover -s tests -v
 ```
 
-Expect three passing examples: positive, zero and negative weight. They test the
-sample `calc_freight` function in the test file itself. They do not exercise the
-backend, database, frontend or a production freight calculation.
+Expect eight passing tests. Five exercise the production backend's health,
+orders and missing-path responses and its default/configurable listen address.
+The API tests use a temporary local server on an automatically assigned port.
+The other three cover positive, zero and negative weight in the sample
+`calc_freight` function defined inside the test file. They do not establish
+coverage of database integration, the frontend or a production freight calculation.
+
+GitHub Actions runs the suite for pushes and PRs targeting `main`, builds the
+Docker image, starts the backend container and checks the health response through
+the published port. A startup or port-mapping failure fails CI; container logs
+are collected and the container is removed after the check.
 
 ### Optional database check
 
