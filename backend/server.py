@@ -6,6 +6,7 @@ Run: python backend/server.py, then visit http://localhost:8000/api/health
 """
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import json
+import os
 
 # Sample data (to be wired to the database schema in database/schema.sql)
 ORDERS = [
@@ -39,8 +40,14 @@ class Handler(BaseHTTPRequestHandler):
         print("[%s] %s" % (self.address_string(), fmt % args))
 
 
+def create_server(port=8000):
+    """Create the API server with a configurable listen address."""
+    return HTTPServer((os.environ.get("LMS_HOST", "localhost"), port), Handler)
+
+
 if __name__ == "__main__":
     PORT = 8000
     print(f"LMS backend running at http://localhost:{PORT}")
     print("Try: http://localhost:8000/api/health")
-    HTTPServer(("localhost", PORT), Handler).serve_forever()
+    with create_server(PORT) as server:
+        server.serve_forever()

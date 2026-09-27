@@ -109,6 +109,23 @@ These are the currently implemented routes, not an agreed contract for future
 business features. Stop the server with **Ctrl+C**. If port 8000 is already in
 use, stop the conflicting local server before retrying.
 
+The server listens on `localhost` by default. Set the `LMS_HOST` environment
+variable to choose another listen address.
+
+### Backend in Docker
+
+With Docker installed and running, build and start the backend from the
+repository root:
+
+```sh
+docker build -t logistics-system:local .
+docker run --rm -p 127.0.0.1:8000:8000 logistics-system:local
+```
+
+The image sets `LMS_HOST=0.0.0.0` so the server accepts requests forwarded to
+the container. The published port is accessible locally at the API URLs above.
+Stop the container with **Ctrl+C**.
+
 ### Example tests
 
 Windows PowerShell:
