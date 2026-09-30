@@ -1,0 +1,358 @@
+openapi: 3.0.3
+info:
+  title: Logistics Management System Backend API
+  version: 0.1.0
+  description: |
+    Minimal backend contract owned by XIE Jiayan. Uses the existing SQLite schema.
+    Demo authentication uses demo/demo123 and process-local tokens; tokens expire
+    when the server restarts. Formal users table: 待 CEN 确认.
+    Order line items and formal order/inventory relationships: 待 CEN 确认.
+    Product text matching is temporary; if several inventory rows match, the row
+    with the lowest id is used. Product and quantity are not stored in orders.
+    Waybill generation and uniqueness rules: 待 CEN 确认; callers supply the number.
+    Empty orders tables receive the legacy Alice/Shipped and Bob/Pending samples
+    on startup. New orders and status updates use lowercase order statuses.
+servers:
+  - url: http://localhost:8000
+paths:
+  /api/health:
+    get:
+      operationId: getHealth
+      summary: Public process health check
+      responses:
+        '200':
+          description: Backend is running
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, service]
+                properties:
+                  status:
+                    type: string
+                    enum: [ok]
+                  service:
+                    type: string
+                    enum: [lms-backend]
+  /api/auth/login:
+    post:
+      operationId: login
+      summary: Obtain a demo bearer token
+      description: Temporary in-memory authentication. Formal users table 待 CEN 确认.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [username, password]
+              properties:
+                username:
+                  type: string
+                  minLength: 1
+                  example: demo
+                password:
+                  type: string
+                  minLength: 1
+                  example: demo123
+      responses:
+        '200':
+          description: Logged in; token is valid until process restart
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [token, token_type]
+                properties:
+                  token:
+                    type: string
+                  token_type:
+                    type: string
+                    enum: [Bearer]
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '413':
+          $ref: '#/components/responses/TooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+  /api/orders:
+    get:
+      operationId: listOrders
+      summary: List persisted orders in id order
+      description: Customer names come from a LEFT JOIN to customers.
+      responses:
+        '200':
+          description: Orders, including the compatible startup samples
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Order'
+              example:
+                - {id: 1, customer: Alice, status: Shipped}
+                - {id: 2, customer: Bob, status: Pending}
+    post:
+      operationId: createOrder
+      summary: Create a pending order and atomically deduct inventory
+      description: |
+        Temporary product text matching uses inventory.product and
+        inventory.quantity. orders only stores customer_id and status.
+        Order line items and formal inventory/order FK: 待 CEN 确认.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [customer_id, product, quantity]
+              properties:
+                customer_id:
+                  type: integer
+                  minimum: 1
+                  maximum: 9223372036854775807
+                  description: Existing customers.id
+                  example: 1
+                product:
+                  type: string
+                  minLength: 1
+                  description: Trimmed text matched exactly to inventory.product
+                  example: Widget A
+                quantity:
+                  type: integer
+                  minimum: 1
+                  maximum: 9223372036854775807
+                  description: Amount deducted from inventory.quantity
+                  example: 2
+      responses:
+        '201':
+          description: Order created and inventory committed in one transaction
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Customer or product does not exist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Insufficient inventory; neither stock nor orders changed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '413':
+          $ref: '#/components/responses/TooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+  /api/orders/{id}/waybill:
+    parameters:
+      - $ref: '#/components/parameters/OrderId'
+    post:
+      operationId: assignWaybill
+      summary: Assign or replace a caller-supplied waybill number
+      description: |
+        Maps to transport.order_id and transport.waybill_no. Creates a transport
+        row using the schema default dispatched status, or updates the existing
+        row with the lowest id without changing its status. Does not change the
+        order status. Waybill generation and uniqueness rules: 待 CEN 确认.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [waybill_no]
+              properties:
+                waybill_no:
+                  type: string
+                  minLength: 1
+                  description: Trimmed caller-supplied transport.waybill_no
+                  example: DEMO-WB-001
+      responses:
+        '200':
+          description: Transport row inserted or updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Transport'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '413':
+          $ref: '#/components/responses/TooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+  /api/orders/{id}/status:
+    parameters:
+      - $ref: '#/components/parameters/OrderId'
+    patch:
+      operationId: updateOrderStatus
+      summary: Update orders.status
+      description: dispatched belongs to transport and is not an order status.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [status]
+              properties:
+                status:
+                  type: string
+                  enum: [pending, shipped, delivered]
+      responses:
+        '200':
+          description: Updated order
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '413':
+          $ref: '#/components/responses/TooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+  /api/inventory:
+    get:
+      operationId: listInventory
+      summary: List inventory rows in id order
+      responses:
+        '200':
+          description: Current persisted inventory
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Inventory'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: Opaque process-local demo token from POST /api/auth/login
+  parameters:
+    OrderId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 9223372036854775807
+      description: Existing orders.id
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+    Order:
+      type: object
+      required: [id, customer, status]
+      properties:
+        id:
+          type: integer
+          description: orders.id
+        customer:
+          type: string
+          nullable: true
+          description: customers.name; null if an existing order has no customer
+        status:
+          type: string
+          description: orders.status; legacy sample rows retain Shipped/Pending
+          example: pending
+    Inventory:
+      type: object
+      required: [id, product, quantity]
+      properties:
+        id:
+          type: integer
+          description: inventory.id
+        product:
+          type: string
+          description: inventory.product
+        quantity:
+          type: integer
+          description: inventory.quantity
+    Transport:
+      type: object
+      required: [id, order_id, waybill_no, status]
+      properties:
+        id:
+          type: integer
+          description: transport.id
+        order_id:
+          type: integer
+          description: transport.order_id
+        waybill_no:
+          type: string
+          description: transport.waybill_no
+        status:
+          type: string
+          nullable: true
+          description: transport.status; new rows default to dispatched
+  responses:
+    BadRequest:
+      description: Invalid JSON, missing/unknown fields, or invalid field values
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unauthorized:
+      description: Invalid login credentials or missing/invalid bearer token
+      headers:
+        WWW-Authenticate:
+          schema:
+            type: string
+            example: Bearer
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Order or route does not exist
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    TooLarge:
+      description: JSON body exceeds 65536 bytes
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    UnsupportedMediaType:
+      description: Request Content-Type must be application/json
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
