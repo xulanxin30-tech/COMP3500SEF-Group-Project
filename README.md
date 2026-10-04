@@ -2,8 +2,8 @@
 
 **COMP3500SEF course project | Seven-member team**
 
-This project aims to build a web application for managing orders, inventory,
-transport dispatch, delivery confirmation and shipment enquiries. The intended
+This project aims to build a web application for managing shipments, inventory,
+hubs, delivery confirmation and tracking enquiries. The intended
 course outcome is a working MVP supported by requirements, design, implementation
 and testing evidence.
 
@@ -15,14 +15,13 @@ checked separately; the complete logistics workflow has not been implemented.
 | Component | Available now | Work still planned |
 | --- | --- | --- |
 | Frontend | Static HTML, CSS and JavaScript; a sign-in form with an alert button | Authentication, business screens and API integration |
-| Backend | Python standard-library HTTP server with two GET endpoints and fixed example orders | Business operations, validation, authentication and persistence |
-| Database | SQL definitions for four tables and two sample inserts; checked with SQLite | Database selection, application integration and a migration approach |
-| Tests | HTTP API and listen-address regression tests; three freight examples | Database, frontend and complete user-workflow tests |
+| Backend | Python standard-library HTTP server with SQLite persistence for schema v1.1 | Formal user authentication and remaining workflow screens |
+| Database | SQLite schema v1.1 (`users`, `hubs`, `items`, `shipments`, `shipment_items`, `tracking_events`) plus Hong Kong seed data | Database selection beyond SQLite and a migration approach |
+| Tests | HTTP API, write-path and listen-address regression tests; three freight examples | Frontend and complete user-workflow tests |
 | Delivery | Source files, team documentation, Dockerfile and GitHub Actions build/test workflow | Deployment and release automation |
 
-There is no database connection in the backend and no API call in the active
-frontend code. The sign-in form does not check credentials. Passing the example
-tests does not demonstrate that the planned business features work.
+The backend loads `database/schema.sql` into SQLite on first start. The active
+frontend still does not call the API; the sign-in form does not check credentials.
 
 ## Documentation
 
@@ -106,12 +105,16 @@ Keep that terminal open and visit the endpoints in a browser:
 | Request | Expected response |
 | --- | --- |
 | [GET /api/health](http://localhost:8000/api/health) | HTTP 200; `{"status": "ok", "service": "lms-backend"}` |
-| [GET /api/orders](http://localhost:8000/api/orders) | HTTP 200; a JSON array of two fixed orders with `id`, `customer` and `status` fields |
+| [GET /api/shipments](http://localhost:8000/api/shipments) | HTTP 200; seeded shipment `HK202610001` for sender `customer_alice` |
+| [GET /api/items](http://localhost:8000/api/items) | HTTP 200; seeded catalogue including `TECH-WM-001` |
 | Any other GET path, for example `/missing` | HTTP 404; `{"error": "not found"}` |
 
-These are the currently implemented routes, not an agreed contract for future
-business features. Stop the server with **Ctrl+C**. If port 8000 is already in
-use, stop the conflicting local server before retrying.
+Authenticated writes (`POST /api/auth/login`, `POST /api/shipments`,
+`PATCH /api/shipments/{id}/status`, `POST /api/shipments/{id}/events`) are
+documented in [docs/openapi.yaml](docs/openapi.yaml). Stop the server with
+**Ctrl+C**. If port 8000 is already in use, stop the conflicting local server
+before retrying. An existing `backend/lms.db` built on the old four-table
+schema should be deleted so the v1.1 schema can be created.
 
 The server listens on `localhost` by default. Set the `LMS_HOST` environment
 variable to choose another listen address.
@@ -144,12 +147,12 @@ macOS/Linux:
 python3 -m unittest discover -s tests -v
 ```
 
-Expect eight passing tests. Five exercise the production backend's health,
-orders and missing-path responses and its default/configurable listen address.
-The API tests use a temporary local server on an automatically assigned port.
-The other three cover positive, zero and negative weight in the sample
-`calc_freight` function defined inside the test file. They do not establish
-coverage of database integration, the frontend or a production freight calculation.
+Expect the unittest suite to pass. The backend tests exercise health, seeded
+shipments, inventory deduction, tracking events, persistence across restart and
+the default/configurable listen address. They use a temporary local server on an
+automatically assigned port. Three further tests cover positive, zero and
+negative weight in the sample `calc_freight` function. They do not establish
+coverage of the frontend or a production freight calculation.
 
 GitHub Actions runs the suite for pushes and PRs targeting `main`, builds the
 Docker image, starts the backend container and checks the health response through
@@ -163,16 +166,16 @@ shells. It loads the schema into a temporary, in-memory database and prints the
 tables and seed records:
 
 ```sh
-sqlite3 ":memory:" ".read database/schema.sql" ".tables" "SELECT name FROM customers;" "SELECT product, quantity FROM inventory;"
+sqlite3 ":memory:" ".read database/schema.sql" ".tables" "SELECT username FROM users;" "SELECT sku, stock_quantity FROM items;"
 ```
 
-Expect `customers`, `inventory`, `orders` and `transport`, one customer named
-`Alice`, and one stock item `Widget A` with quantity `100`. The database disappears
-when the command exits and is not used by the backend.
+Expect `users`, `hubs`, `items`, `shipments`, `shipment_items` and
+`tracking_events`, a user named `customer_alice`, and SKU `TECH-WM-001` with
+quantity `120`. The database disappears when the command exits.
 
-The script's sample inserts add more rows if run again against the same database.
-Use a fresh database for this check. MySQL and PostgreSQL execution has not been
-verified; the final application database is still to be agreed.
+The script begins by dropping the v1.1 tables, so re-running it against the same
+file rebuilds seed data. Use a fresh database for this check. MySQL and
+PostgreSQL execution has not been verified; CI and the backend use SQLite.
 
 ## Working together
 

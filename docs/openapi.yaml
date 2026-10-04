@@ -1,17 +1,16 @@
 openapi: 3.0.3
 info:
   title: Logistics Management System Backend API
-  version: 0.1.0
+  version: 0.2.0
   description: |
-    Minimal backend contract owned by XIE Jiayan. Uses the existing SQLite schema.
+    Backend contract owned by XIE Jiayan. Persists against schema v1.1
+    (`users`, `hubs`, `items`, `shipments`, `shipment_items`, `tracking_events`).
     Demo authentication uses demo/demo123 and process-local tokens; tokens expire
-    when the server restarts. Formal users table: 待 CEN 确认.
-    Order line items and formal order/inventory relationships: 待 CEN 确认.
-    Product text matching is temporary; if several inventory rows match, the row
-    with the lowest id is used. Product and quantity are not stored in orders.
-    Waybill generation and uniqueness rules: 待 CEN 确认; callers supply the number.
-    Empty orders tables receive the legacy Alice/Shipped and Bob/Pending samples
-    on startup. New orders and status updates use lowercase order statuses.
+    when the server restarts. Formal password hashing is still pending.
+    Creating a shipment deducts `items.stock_quantity` and writes one
+    `shipment_items` row plus a pending tracking event. Status updates also
+    append a tracking event. Event posts are append-only and do not change
+    `shipments.status`.
 servers:
   - url: http://localhost:8000
 paths:
@@ -38,7 +37,7 @@ paths:
     post:
       operationId: login
       summary: Obtain a demo bearer token
-      description: Temporary in-memory authentication. Formal users table 待 CEN 确认.
+      description: Temporary in-memory authentication. Seeded users are not used for login yet.
       requestBody:
         required: true
         content:
@@ -78,30 +77,29 @@ paths:
           $ref: '#/components/responses/TooLarge'
         '415':
           $ref: '#/components/responses/UnsupportedMediaType'
-  /api/orders:
+  /api/shipments:
     get:
-      operationId: listOrders
-      summary: List persisted orders in id order
-      description: Customer names come from a LEFT JOIN to customers.
+      operationId: listShipments
+      summary: List persisted shipments in id order
+      description: Sender usernames come from a LEFT JOIN to users.
       responses:
         '200':
-          description: Orders, including the compatible startup samples
+          description: Shipments, including the schema seed row
           content:
             application/json:
               schema:
                 type: array
                 items:
-                  $ref: '#/components/schemas/Order'
+                  $ref: '#/components/schemas/Shipment'
               example:
-                - {id: 1, customer: Alice, status: Shipped}
-                - {id: 2, customer: Bob, status: Pending}
+                - {id: 1, tracking_number: HK202610001, sender: customer_alice, receiver_name: David Cheung, status: shipped}
     post:
-      operationId: createOrder
-      summary: Create a pending order and atomically deduct inventory
+      operationId: createShipment
+      summary: Create a pending shipment and atomically deduct item stock
       description: |
-        Temporary product text matching uses inventory.product and
-        inventory.quantity. orders only stores customer_id and status.
-        Order line items and formal inventory/order FK: 待 CEN 确认.
+        Matches `items.sku`, deducts `items.stock_quantity`, inserts
+        `shipments`, `shipment_items` and a pending `tracking_events` row.
+        Tracking numbers are generated as HK plus UTC date plus a sequence.
       security:
         - bearerAuth: []
       requestBody:
@@ -111,44 +109,56 @@ paths:
             schema:
               type: object
               additionalProperties: false
-              required: [customer_id, product, quantity]
+              required: [sender_id, receiver_name, receiver_phone, delivery_address, sku, quantity]
               properties:
-                customer_id:
+                sender_id:
                   type: integer
                   minimum: 1
                   maximum: 9223372036854775807
-                  description: Existing customers.id
-                  example: 1
-                product:
+                  description: Existing users.user_id
+                  example: 2
+                receiver_name:
                   type: string
                   minLength: 1
-                  description: Trimmed text matched exactly to inventory.product
-                  example: Widget A
+                  example: Mary Wong
+                receiver_phone:
+                  type: string
+                  minLength: 1
+                  example: '+852-91112222'
+                delivery_address:
+                  type: string
+                  minLength: 1
+                  example: Flat A, 8/F, Harbour View, Wan Chai
+                sku:
+                  type: string
+                  minLength: 1
+                  description: Trimmed text matched exactly to items.sku
+                  example: TECH-WM-001
                 quantity:
                   type: integer
                   minimum: 1
                   maximum: 9223372036854775807
-                  description: Amount deducted from inventory.quantity
+                  description: Amount deducted from items.stock_quantity
                   example: 2
       responses:
         '201':
-          description: Order created and inventory committed in one transaction
+          description: Shipment created and inventory committed in one transaction
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Order'
+                $ref: '#/components/schemas/Shipment'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
-          description: Customer or product does not exist
+          description: Sender or item does not exist
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
         '409':
-          description: Insufficient inventory; neither stock nor orders changed
+          description: Insufficient inventory; neither stock nor shipments changed
           content:
             application/json:
               schema:
@@ -157,17 +167,15 @@ paths:
           $ref: '#/components/responses/TooLarge'
         '415':
           $ref: '#/components/responses/UnsupportedMediaType'
-  /api/orders/{id}/waybill:
+  /api/shipments/{id}/events:
     parameters:
-      - $ref: '#/components/parameters/OrderId'
+      - $ref: '#/components/parameters/ShipmentId'
     post:
-      operationId: assignWaybill
-      summary: Assign or replace a caller-supplied waybill number
+      operationId: appendTrackingEvent
+      summary: Append a tracking timeline event
       description: |
-        Maps to transport.order_id and transport.waybill_no. Creates a transport
-        row using the schema default dispatched status, or updates the existing
-        row with the lowest id without changing its status. Does not change the
-        order status. Waybill generation and uniqueness rules: 待 CEN 确认.
+        Inserts an append-only `tracking_events` row. Does not change
+        `shipments.status`. `hub_id` may be null when the event is not hub-local.
       security:
         - bearerAuth: []
       requestBody:
@@ -177,20 +185,29 @@ paths:
             schema:
               type: object
               additionalProperties: false
-              required: [waybill_no]
+              required: [hub_id, status, description]
               properties:
-                waybill_no:
+                hub_id:
+                  type: integer
+                  nullable: true
+                  minimum: 1
+                  maximum: 9223372036854775807
+                  description: Existing hubs.hub_id, or null
+                  example: 1
+                status:
+                  type: string
+                  enum: [pending, shipped, delivered]
+                description:
                   type: string
                   minLength: 1
-                  description: Trimmed caller-supplied transport.waybill_no
-                  example: DEMO-WB-001
+                  example: Parcel picked up and arrived at Kowloon Sorting Center.
       responses:
         '200':
-          description: Transport row inserted or updated
+          description: Tracking event inserted
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Transport'
+                $ref: '#/components/schemas/TrackingEvent'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -201,13 +218,13 @@ paths:
           $ref: '#/components/responses/TooLarge'
         '415':
           $ref: '#/components/responses/UnsupportedMediaType'
-  /api/orders/{id}/status:
+  /api/shipments/{id}/status:
     parameters:
-      - $ref: '#/components/parameters/OrderId'
+      - $ref: '#/components/parameters/ShipmentId'
     patch:
-      operationId: updateOrderStatus
-      summary: Update orders.status
-      description: dispatched belongs to transport and is not an order status.
+      operationId: updateShipmentStatus
+      summary: Update shipments.status
+      description: Also appends a tracking event describing the status change.
       security:
         - bearerAuth: []
       requestBody:
@@ -224,11 +241,11 @@ paths:
                   enum: [pending, shipped, delivered]
       responses:
         '200':
-          description: Updated order
+          description: Updated shipment
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Order'
+                $ref: '#/components/schemas/Shipment'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -239,19 +256,19 @@ paths:
           $ref: '#/components/responses/TooLarge'
         '415':
           $ref: '#/components/responses/UnsupportedMediaType'
-  /api/inventory:
+  /api/items:
     get:
-      operationId: listInventory
-      summary: List inventory rows in id order
+      operationId: listItems
+      summary: List item catalogue rows in id order
       responses:
         '200':
-          description: Current persisted inventory
+          description: Current persisted items
           content:
             application/json:
               schema:
                 type: array
                 items:
-                  $ref: '#/components/schemas/Inventory'
+                  $ref: '#/components/schemas/Item'
 components:
   securitySchemes:
     bearerAuth:
@@ -259,7 +276,7 @@ components:
       scheme: bearer
       description: Opaque process-local demo token from POST /api/auth/login
   parameters:
-    OrderId:
+    ShipmentId:
       name: id
       in: path
       required: true
@@ -267,7 +284,7 @@ components:
         type: integer
         minimum: 1
         maximum: 9223372036854775807
-      description: Existing orders.id
+      description: Existing shipments.shipment_id
   schemas:
     Error:
       type: object
@@ -275,51 +292,61 @@ components:
       properties:
         error:
           type: string
-    Order:
+    Shipment:
       type: object
-      required: [id, customer, status]
+      required: [id, tracking_number, sender, receiver_name, status]
       properties:
         id:
           type: integer
-          description: orders.id
-        customer:
+          description: shipments.shipment_id
+        tracking_number:
+          type: string
+          description: shipments.tracking_number
+        sender:
           type: string
           nullable: true
-          description: customers.name; null if an existing order has no customer
+          description: users.username for sender_id
+        receiver_name:
+          type: string
+          description: shipments.receiver_name
         status:
           type: string
-          description: orders.status; legacy sample rows retain Shipped/Pending
-          example: pending
-    Inventory:
+          enum: [pending, shipped, delivered]
+    Item:
       type: object
-      required: [id, product, quantity]
+      required: [id, item_name, sku, stock_quantity, unit_price]
       properties:
         id:
           type: integer
-          description: inventory.id
-        product:
+          description: items.item_id
+        item_name:
           type: string
-          description: inventory.product
-        quantity:
-          type: integer
-          description: inventory.quantity
-    Transport:
-      type: object
-      required: [id, order_id, waybill_no, status]
-      properties:
-        id:
-          type: integer
-          description: transport.id
-        order_id:
-          type: integer
-          description: transport.order_id
-        waybill_no:
-          type: string
-          description: transport.waybill_no
-        status:
+        sku:
           type: string
           nullable: true
-          description: transport.status; new rows default to dispatched
+        stock_quantity:
+          type: integer
+        unit_price:
+          type: number
+    TrackingEvent:
+      type: object
+      required: [id, shipment_id, hub_id, status, description, event_time]
+      properties:
+        id:
+          type: integer
+          description: tracking_events.event_id
+        shipment_id:
+          type: integer
+        hub_id:
+          type: integer
+          nullable: true
+        status:
+          type: string
+          enum: [pending, shipped, delivered]
+        description:
+          type: string
+        event_time:
+          type: string
   responses:
     BadRequest:
       description: Invalid JSON, missing/unknown fields, or invalid field values
@@ -339,7 +366,7 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
     NotFound:
-      description: Order or route does not exist
+      description: Shipment, hub or route does not exist
       content:
         application/json:
           schema:

@@ -1,6 +1,5 @@
--- =======================================================
--- LOGISTICS MANAGEMENT SYSTEM - SCHEMA (v1.1 Compatible)
--- =======================================================
+-- Logistics Management System schema v1.1 (SQLite).
+-- Responsibilities: docs/PROJECT.md. Review changes with affected module owners.
 
 DROP TABLE IF EXISTS tracking_events;
 DROP TABLE IF EXISTS shipment_items;
@@ -9,66 +8,62 @@ DROP TABLE IF EXISTS items;
 DROP TABLE IF EXISTS hubs;
 DROP TABLE IF EXISTS users;
 
--- 1. Users Table
 CREATE TABLE users (
     user_id INTEGER PRIMARY KEY AUTOINCREMENT,
-    username VARCHAR(50) NOT NULL UNIQUE,
-    password_hash VARCHAR(255) NOT NULL,
-    role VARCHAR(20) NOT NULL DEFAULT 'customer',
-    phone VARCHAR(20) NOT NULL,
+    username TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    role TEXT NOT NULL DEFAULT 'customer'
+        CHECK (role IN ('customer', 'courier', 'warehouse_admin', 'admin')),
+    phone TEXT NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- 2. Hubs Table
 CREATE TABLE hubs (
     hub_id INTEGER PRIMARY KEY AUTOINCREMENT,
-    hub_name VARCHAR(100) NOT NULL,
-    district VARCHAR(50) NOT NULL,
-    address VARCHAR(255) NOT NULL
+    hub_name TEXT NOT NULL,
+    district TEXT NOT NULL,
+    address TEXT NOT NULL
 );
 
--- 3. Items & Inventory Table
 CREATE TABLE items (
     item_id INTEGER PRIMARY KEY AUTOINCREMENT,
-    item_name VARCHAR(100) NOT NULL,
-    sku VARCHAR(50) UNIQUE,
-    stock_quantity INT NOT NULL DEFAULT 0,
-    unit_price DECIMAL(10, 2) NOT NULL DEFAULT 0.00
+    item_name TEXT NOT NULL,
+    sku TEXT UNIQUE,
+    stock_quantity INTEGER NOT NULL DEFAULT 0,
+    unit_price REAL NOT NULL DEFAULT 0.00
 );
 
--- 4. Shipments Table
 CREATE TABLE shipments (
     shipment_id INTEGER PRIMARY KEY AUTOINCREMENT,
-    tracking_number VARCHAR(32) NOT NULL UNIQUE,
-    sender_id INT NOT NULL,
-    receiver_name VARCHAR(50) NOT NULL,
-    receiver_phone VARCHAR(20) NOT NULL,
-    delivery_address VARCHAR(255) NOT NULL,
-    status VARCHAR(20) NOT NULL DEFAULT 'pending',
-    current_hub_id INT,
+    tracking_number TEXT NOT NULL UNIQUE,
+    sender_id INTEGER NOT NULL,
+    receiver_name TEXT NOT NULL,
+    receiver_phone TEXT NOT NULL,
+    delivery_address TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending'
+        CHECK (status IN ('pending', 'shipped', 'delivered')),
+    current_hub_id INTEGER,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (sender_id) REFERENCES users(user_id),
     FOREIGN KEY (current_hub_id) REFERENCES hubs(hub_id)
 );
 
--- 5. Shipment Items Table
 CREATE TABLE shipment_items (
     shipment_item_id INTEGER PRIMARY KEY AUTOINCREMENT,
-    shipment_id INT NOT NULL,
-    item_id INT NOT NULL,
-    quantity INT NOT NULL DEFAULT 1,
+    shipment_id INTEGER NOT NULL,
+    item_id INTEGER NOT NULL,
+    quantity INTEGER NOT NULL DEFAULT 1,
     FOREIGN KEY (shipment_id) REFERENCES shipments(shipment_id) ON DELETE CASCADE,
     FOREIGN KEY (item_id) REFERENCES items(item_id)
 );
 
--- 6. Tracking Events Table
 CREATE TABLE tracking_events (
     event_id INTEGER PRIMARY KEY AUTOINCREMENT,
-    shipment_id INT NOT NULL,
-    hub_id INT,
-    status VARCHAR(20) NOT NULL,
-    description VARCHAR(255) NOT NULL,
+    shipment_id INTEGER NOT NULL,
+    hub_id INTEGER,
+    status TEXT NOT NULL CHECK (status IN ('pending', 'shipped', 'delivered')),
+    description TEXT NOT NULL,
     event_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (shipment_id) REFERENCES shipments(shipment_id) ON DELETE CASCADE,
     FOREIGN KEY (hub_id) REFERENCES hubs(hub_id)
@@ -76,9 +71,6 @@ CREATE TABLE tracking_events (
 
 CREATE INDEX idx_tracking_events_lookup ON tracking_events(shipment_id, event_time DESC);
 
--- =======================================================
--- SEED DATA
--- =======================================================
 INSERT INTO users (username, password_hash, role, phone) VALUES
 ('admin_alan', 'hash_pwd_001', 'admin', '+852-91234567'),
 ('customer_alice', 'hash_pwd_002', 'customer', '+852-94567890'),

@@ -14,6 +14,29 @@ from urllib.request import ProxyHandler, Request, build_opener
 
 from backend.server import create_server
 
+SEEDED_SHIPMENT = {
+    "id": 1,
+    "tracking_number": "HK202610001",
+    "sender": "customer_alice",
+    "receiver_name": "David Cheung",
+    "status": "shipped",
+}
+SEEDED_MOUSE = {
+    "id": 1,
+    "item_name": "Wireless Optical Mouse",
+    "sku": "TECH-WM-001",
+    "stock_quantity": 120,
+    "unit_price": 150.0,
+}
+CREATE_SHIPMENT = {
+    "sender_id": 2,
+    "receiver_name": "Mary Wong",
+    "receiver_phone": "+852-91112222",
+    "delivery_address": "Flat A, 8/F, Harbour View, Wan Chai",
+    "sku": "TECH-WM-001",
+    "quantity": 7,
+}
+
 
 class APIClient:
     def request(self, path, method="GET", data=None, token=None, raw_body=None):
@@ -77,13 +100,10 @@ class TestBackendAPI(APIClient, unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(body, {"status": "ok", "service": "lms-backend"})
 
-    def test_orders(self):
-        status, body = self.request("/api/orders")
+    def test_shipments(self):
+        status, body = self.request("/api/shipments")
         self.assertEqual(status, 200)
-        self.assertEqual(body, [
-            {"id": 1, "customer": "Alice", "status": "Shipped"},
-            {"id": 2, "customer": "Bob", "status": "Pending"},
-        ])
+        self.assertEqual(body, [SEEDED_SHIPMENT])
 
     def test_unknown_path(self):
         status, body = self.request("/missing")
@@ -132,21 +152,24 @@ class TestBackendWrites(APIClient, unittest.TestCase):
 
     def test_write_routes_require_login(self):
         routes = [
-            ("POST", "/api/orders", {"customer_id": 1, "product": "Widget A", "quantity": 1}),
-            ("POST", "/api/orders/1/waybill", {"waybill_no": "DEMO-WB-001"}),
-            ("PATCH", "/api/orders/1/status", {"status": "shipped"}),
+            ("POST", "/api/shipments", CREATE_SHIPMENT),
+            ("POST", "/api/shipments/1/events", {
+                "hub_id": 1, "status": "shipped", "description": "Arrived at hub.",
+            }),
+            ("PATCH", "/api/shipments/1/status", {"status": "shipped"}),
         ]
         for method, path, data in routes:
             for token in (None, "invalid-token"):
                 with self.subTest(path=path, token=token):
                     status, _ = self.request(path, method, data, token)
                     self.assertEqual(status, 401)
-        self.assertEqual(self.database_rows("SELECT quantity FROM inventory"), [(100,)])
-        self.assertEqual(self.database_rows("SELECT COUNT(*) FROM transport"), [(0,)])
+        self.assertEqual(self.database_rows("SELECT stock_quantity FROM items WHERE item_id = 1"),
+                         [(120,)])
+        self.assertEqual(self.database_rows("SELECT COUNT(*) FROM tracking_events"), [(2,)])
 
     def test_login_success(self):
         token = self.login()
-        status, _ = self.request("/api/orders/1/status", "PATCH", {"status": "pending"}, token)
+        status, _ = self.request("/api/shipments/1/status", "PATCH", {"status": "pending"}, token)
         self.assertEqual(status, 200)
 
     def test_login_rejects_invalid_credentials(self):
@@ -156,141 +179,189 @@ class TestBackendWrites(APIClient, unittest.TestCase):
         self.assertEqual(status, 401)
         self.assertNotIn("token", body)
 
-    def test_create_order_deducts_inventory(self):
+    def test_create_shipment_deducts_inventory(self):
         token = self.login()
-        self.assertEqual(self.request("/api/inventory"), (200, [
-            {"id": 1, "product": "Widget A", "quantity": 100},
-        ]))
-        status, order = self.request(
-            "/api/orders", "POST", {"customer_id": 1, "product": "Widget A", "quantity": 7}, token
-        )
+        status, items = self.request("/api/items")
+        self.assertEqual(status, 200)
+        self.assertEqual(items[0], SEEDED_MOUSE)
+        status, shipment = self.request("/api/shipments", "POST", CREATE_SHIPMENT, token)
         self.assertEqual(status, 201)
-        self.assertEqual(order, {"id": 3, "customer": "Alice", "status": "pending"})
-        self.assertEqual(self.request("/api/inventory")[1][0]["quantity"], 93)
-        self.assertIn(order, self.request("/api/orders")[1])
-        self.assertEqual(self.database_rows("SELECT quantity FROM inventory WHERE id = 1"), [(93,)])
-        self.assertEqual(self.database_rows("SELECT customer_id, status FROM orders WHERE id = 3"),
-                         [(1, "pending")])
+        self.assertEqual(shipment["id"], 2)
+        self.assertEqual(shipment["sender"], "customer_alice")
+        self.assertEqual(shipment["receiver_name"], "Mary Wong")
+        self.assertEqual(shipment["status"], "pending")
+        self.assertTrue(shipment["tracking_number"].startswith("HK"))
+        self.assertEqual(self.request("/api/items")[1][0]["stock_quantity"], 113)
+        self.assertIn(shipment, self.request("/api/shipments")[1])
+        self.assertEqual(self.database_rows("SELECT stock_quantity FROM items WHERE item_id = 1"),
+                         [(113,)])
+        self.assertEqual(self.database_rows(
+            "SELECT sender_id, status FROM shipments WHERE shipment_id = 2"
+        ), [(2, "pending")])
+        self.assertEqual(self.database_rows(
+            "SELECT item_id, quantity FROM shipment_items WHERE shipment_id = 2"
+        ), [(1, 7)])
 
     def test_insufficient_inventory_leaves_database_unchanged(self):
         token = self.login()
-        orders_before = self.request("/api/orders")
-        inventory_before = self.request("/api/inventory")
+        shipments_before = self.request("/api/shipments")
+        items_before = self.request("/api/items")
         status, _ = self.request(
-            "/api/orders", "POST", {"customer_id": 1, "product": "Widget A", "quantity": 101}, token
+            "/api/shipments", "POST", {**CREATE_SHIPMENT, "quantity": 121}, token
         )
         self.assertEqual(status, 409)
-        self.assertEqual(self.request("/api/orders"), orders_before)
-        self.assertEqual(self.request("/api/inventory"), inventory_before)
+        self.assertEqual(self.request("/api/shipments"), shipments_before)
+        self.assertEqual(self.request("/api/items"), items_before)
 
-    def test_missing_product_or_customer(self):
+    def test_missing_item_or_sender(self):
         token = self.login()
-        for customer_id, product in ((1, "Missing product"), (999, "Widget A")):
-            with self.subTest(customer_id=customer_id, product=product):
-                status, _ = self.request(
-                    "/api/orders", "POST",
-                    {"customer_id": customer_id, "product": product, "quantity": 1}, token
-                )
+        cases = (
+            {**CREATE_SHIPMENT, "sku": "MISSING-SKU"},
+            {**CREATE_SHIPMENT, "sender_id": 999},
+        )
+        for data in cases:
+            with self.subTest(data=data):
+                status, _ = self.request("/api/shipments", "POST", data, token)
                 self.assertEqual(status, 404)
-        self.assertEqual(self.database_rows("SELECT quantity FROM inventory"), [(100,)])
-        self.assertEqual(self.database_rows("SELECT COUNT(*) FROM orders"), [(2,)])
+        self.assertEqual(self.database_rows("SELECT stock_quantity FROM items WHERE item_id = 1"),
+                         [(120,)])
+        self.assertEqual(self.database_rows("SELECT COUNT(*) FROM shipments"), [(1,)])
 
-    def test_order_input_validation(self):
+    def test_shipment_input_validation(self):
         token = self.login()
-        valid = {"customer_id": 1, "product": "Widget A", "quantity": 1}
-        invalid = [{**valid, "quantity": quantity}
-                   for quantity in (0, -1, True, 1.5, "1", 2**63)]
-        invalid += [{**valid, "customer_id": customer_id} for customer_id in (0, True, 2**63)]
-        invalid += [{**valid, "product": " "}, {"customer_id": 1}, {**valid, "extra": 1}]
+        valid = CREATE_SHIPMENT
+        invalid = [{**valid, "quantity": quantity} for quantity in (0, -1, True, 1.5, "1", 2**63)]
+        invalid += [{**valid, "sender_id": sender_id} for sender_id in (0, True, 2**63)]
+        invalid += [{**valid, "sku": " "}, {"sender_id": 2}, {**valid, "extra": 1}]
         for data in invalid:
             with self.subTest(data=data):
-                self.assertEqual(self.request("/api/orders", "POST", data, token)[0], 400)
-        self.assertEqual(self.database_rows("SELECT quantity FROM inventory"), [(100,)])
-        self.assertEqual(self.database_rows("SELECT COUNT(*) FROM orders"), [(2,)])
+                self.assertEqual(self.request("/api/shipments", "POST", data, token)[0], 400)
+        self.assertEqual(self.database_rows("SELECT stock_quantity FROM items WHERE item_id = 1"),
+                         [(120,)])
+        self.assertEqual(self.database_rows("SELECT COUNT(*) FROM shipments"), [(1,)])
 
-    def test_update_order_status(self):
+    def test_update_shipment_status(self):
         token = self.login()
+        expected = dict(SEEDED_SHIPMENT)
         for value in ("pending", "shipped", "delivered"):
             with self.subTest(status=value):
-                status, order = self.request("/api/orders/1/status", "PATCH", {"status": value}, token)
+                expected["status"] = value
+                status, shipment = self.request(
+                    "/api/shipments/1/status", "PATCH", {"status": value}, token
+                )
                 self.assertEqual(status, 200)
-                self.assertEqual(order, {"id": 1, "customer": "Alice", "status": value})
-                self.assertEqual(self.request("/api/orders")[1][0], order)
-        self.assertEqual(self.database_rows("SELECT status FROM orders WHERE id = 1"), [("delivered",)])
+                self.assertEqual(shipment, expected)
+                self.assertEqual(self.request("/api/shipments")[1][0], shipment)
+        self.assertEqual(self.database_rows("SELECT status FROM shipments WHERE shipment_id = 1"),
+                         [("delivered",)])
 
-    def test_invalid_order_status(self):
+    def test_invalid_shipment_status(self):
         token = self.login()
         for value in ("dispatched", "cancelled", "Shipped", None, True, []):
             with self.subTest(status=value):
-                status, _ = self.request("/api/orders/1/status", "PATCH", {"status": value}, token)
+                status, _ = self.request(
+                    "/api/shipments/1/status", "PATCH", {"status": value}, token
+                )
                 self.assertEqual(status, 400)
-        self.assertEqual(self.database_rows("SELECT status FROM orders WHERE id = 1"), [("Shipped",)])
+        self.assertEqual(self.database_rows("SELECT status FROM shipments WHERE shipment_id = 1"),
+                         [("shipped",)])
 
-    def test_assign_and_replace_waybill(self):
+    def test_append_tracking_events(self):
         token = self.login()
-        status, transport = self.request(
-            "/api/orders/1/waybill", "POST", {"waybill_no": "DEMO-WB-001"}, token
+        status, event = self.request(
+            "/api/shipments/1/events", "POST",
+            {"hub_id": 1, "status": "shipped", "description": "Arrived at Kowloon Sorting Center."},
+            token,
         )
         self.assertEqual(status, 200)
-        self.assertEqual(transport, {
-            "id": 1, "order_id": 1, "waybill_no": "DEMO-WB-001", "status": "dispatched",
-        })
-        status, updated = self.request(
-            "/api/orders/1/waybill", "POST", {"waybill_no": "DEMO-WB-002"}, token
+        self.assertEqual(event["id"], 3)
+        self.assertEqual(event["shipment_id"], 1)
+        self.assertEqual(event["hub_id"], 1)
+        self.assertEqual(event["status"], "shipped")
+        self.assertEqual(event["description"], "Arrived at Kowloon Sorting Center.")
+        self.assertIn("event_time", event)
+        status, second = self.request(
+            "/api/shipments/1/events", "POST",
+            {"hub_id": None, "status": "delivered", "description": "Delivered to receiver."},
+            token,
         )
         self.assertEqual(status, 200)
-        self.assertEqual(updated, {**transport, "waybill_no": "DEMO-WB-002"})
-        self.assertEqual(self.database_rows("SELECT order_id, waybill_no, status FROM transport"),
-                         [(1, "DEMO-WB-002", "dispatched")])
-        self.assertEqual(self.database_rows("SELECT status FROM orders WHERE id = 1"), [("Shipped",)])
+        self.assertEqual(second["id"], 4)
+        self.assertIsNone(second["hub_id"])
+        self.assertEqual(self.database_rows(
+            "SELECT status, description FROM tracking_events ORDER BY event_id"
+        ), [
+            ("pending", "Shipping order created by sender."),
+            ("shipped", "Parcel picked up and arrived at Kowloon Sorting Center."),
+            ("shipped", "Arrived at Kowloon Sorting Center."),
+            ("delivered", "Delivered to receiver."),
+        ])
+        self.assertEqual(self.database_rows("SELECT status FROM shipments WHERE shipment_id = 1"),
+                         [("shipped",)])
 
-    def test_invalid_waybill(self):
+    def test_invalid_tracking_event(self):
         token = self.login()
-        for value in ("", " ", None, 123):
-            with self.subTest(waybill_no=value):
-                status, _ = self.request("/api/orders/1/waybill", "POST", {"waybill_no": value}, token)
+        valid = {"hub_id": 1, "status": "shipped", "description": "Arrived at hub."}
+        for data in (
+            {**valid, "description": " "},
+            {**valid, "status": "dispatched"},
+            {**valid, "hub_id": 0},
+            {"description": "Arrived at hub."},
+        ):
+            with self.subTest(data=data):
+                status, _ = self.request("/api/shipments/1/events", "POST", data, token)
                 self.assertEqual(status, 400)
-        self.assertEqual(self.database_rows("SELECT COUNT(*) FROM transport"), [(0,)])
+        self.assertEqual(self.database_rows("SELECT COUNT(*) FROM tracking_events"), [(2,)])
 
-    def test_writes_to_missing_orders(self):
+    def test_writes_to_missing_shipments(self):
         token = self.login()
         for method, path, data in (
-            ("POST", "/api/orders/999/waybill", {"waybill_no": "DEMO-WB-001"}),
-            ("PATCH", "/api/orders/999/status", {"status": "delivered"}),
+            ("POST", "/api/shipments/999/events", {
+                "hub_id": 1, "status": "shipped", "description": "Arrived at hub.",
+            }),
+            ("PATCH", "/api/shipments/999/status", {"status": "delivered"}),
         ):
             with self.subTest(path=path):
                 self.assertEqual(self.request(path, method, data, token)[0], 404)
-        self.assertEqual(self.database_rows("SELECT COUNT(*) FROM transport"), [(0,)])
+        self.assertEqual(self.database_rows("SELECT COUNT(*) FROM tracking_events"), [(2,)])
 
     def test_invalid_json(self):
         token = self.login()
         for raw_body in (b'{', b'[]', b'null', b'\xff'):
             with self.subTest(raw_body=raw_body):
-                status, _ = self.request("/api/orders", "POST", token=token, raw_body=raw_body)
+                status, _ = self.request("/api/shipments", "POST", token=token, raw_body=raw_body)
                 self.assertEqual(status, 400)
         self.assertEqual(self.request("/api/health")[0], 200)
 
     def test_data_persists_and_seed_is_not_repeated(self):
         token = self.login()
-        status, order = self.request(
-            "/api/orders", "POST", {"customer_id": 1, "product": "Widget A", "quantity": 5}, token
-        )
+        status, shipment = self.request("/api/shipments", "POST", CREATE_SHIPMENT, token)
         self.assertEqual(status, 201)
-        path = f'/api/orders/{order["id"]}'
+        path = f'/api/shipments/{shipment["id"]}'
         self.assertEqual(self.request(path + "/status", "PATCH", {"status": "delivered"}, token)[0], 200)
-        self.assertEqual(self.request(path + "/waybill", "POST", {"waybill_no": "PERSISTED"}, token)[0], 200)
+        self.assertEqual(self.request(path + "/events", "POST", {
+            "hub_id": 2, "status": "delivered", "description": "Out for delivery from Central.",
+        }, token)[0], 200)
         self.stop_server()
         self.start_server()
-        self.assertEqual(self.request("/api/inventory")[1], [
-            {"id": 1, "product": "Widget A", "quantity": 95},
-        ])
-        self.assertEqual(self.request("/api/orders")[1][-1], {**order, "status": "delivered"})
-        self.assertEqual(self.database_rows("SELECT name FROM customers ORDER BY id"), [("Alice",), ("Bob",)])
-        self.assertEqual(self.database_rows("SELECT waybill_no FROM transport"), [("PERSISTED",)])
+        self.assertEqual(self.request("/api/items")[1][0]["stock_quantity"], 113)
+        self.assertEqual(self.request("/api/shipments")[1][-1], {**shipment, "status": "delivered"})
+        self.assertEqual(
+            self.database_rows("SELECT username FROM users ORDER BY user_id"),
+            [("admin_alan",), ("customer_alice",), ("courier_chan",)],
+        )
+        self.assertEqual(
+            self.database_rows("SELECT description FROM tracking_events WHERE shipment_id = 2 ORDER BY event_id"),
+            [
+                ("Shipping order created by sender.",),
+                ("Shipment status updated to delivered.",),
+                ("Out for delivery from Central.",),
+            ],
+        )
         self.assertEqual(self.request(path + "/status", "PATCH", {"status": "pending"}, token)[0], 401)
 
     def test_cors_preflight_and_public_health(self):
-        request = Request(self.base_url + "/api/orders", method="OPTIONS", headers={
+        request = Request(self.base_url + "/api/shipments", method="OPTIONS", headers={
             "Origin": "http://localhost:3000",
             "Access-Control-Request-Method": "POST",
             "Access-Control-Request-Headers": "authorization,content-type",
