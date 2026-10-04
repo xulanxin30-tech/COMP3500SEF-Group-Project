@@ -224,7 +224,7 @@ paths:
     patch:
       operationId: updateShipmentStatus
       summary: Update shipments.status
-      description: Also appends a tracking event describing the status change.
+      description: Refreshes shipments.updated_at and appends a tracking event describing the status change.
       security:
         - bearerAuth: []
       requestBody:

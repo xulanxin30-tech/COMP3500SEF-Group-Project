@@ -255,6 +255,27 @@ class TestBackendWrites(APIClient, unittest.TestCase):
         self.assertEqual(self.database_rows("SELECT status FROM shipments WHERE shipment_id = 1"),
                          [("delivered",)])
 
+    def test_status_update_refreshes_updated_at(self):
+        # Use an old timestamp so the test does not depend on sleeping or clock resolution.
+        with closing(sqlite3.connect(self.database_path)) as connection, connection:
+            connection.execute(
+                "UPDATE shipments SET updated_at = '2000-01-01 00:00:00' WHERE shipment_id = 1"
+            )
+        token = self.login()
+        before = self.database_rows("SELECT CURRENT_TIMESTAMP")[0][0]
+        status, _ = self.request(
+            "/api/shipments/1/status", "PATCH", {"status": "delivered"}, token
+        )
+        after = self.database_rows("SELECT CURRENT_TIMESTAMP")[0][0]
+
+        self.assertEqual(status, 200)
+        shipment_status, updated_at = self.database_rows(
+            "SELECT status, updated_at FROM shipments WHERE shipment_id = 1"
+        )[0]
+        self.assertEqual(shipment_status, "delivered")
+        self.assertGreaterEqual(updated_at, before)
+        self.assertLessEqual(updated_at, after)
+
     def test_invalid_shipment_status(self):
         token = self.login()
         for value in ("dispatched", "cancelled", "Shipped", None, True, []):

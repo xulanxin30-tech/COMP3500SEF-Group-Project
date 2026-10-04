@@ -318,7 +318,8 @@ class Handler(BaseHTTPRequestHandler):
             raise APIError(400, "status must be pending, shipped, or delivered")
         with database_connection(self.server.database_path) as connection:
             updated = connection.execute(
-                "UPDATE shipments SET status = ? WHERE shipment_id = ?",
+                """UPDATE shipments SET status = ?, updated_at = CURRENT_TIMESTAMP
+                   WHERE shipment_id = ?""",
                 (data["status"], shipment_id),
             )
             if updated.rowcount != 1:
