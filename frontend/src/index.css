@@ -1,0 +1,83 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  /* 深色运营调度台主题：近黑底 + 薄荷绿主色 + 层级化灰阶文本 */
+  :root {
+    --background: 220 13% 5%;
+    --foreground: 210 20% 96%;
+    --card: 222 12% 8%;
+    --card-foreground: 210 20% 96%;
+    --popover: 222 12% 8%;
+    --popover-foreground: 210 20% 96%;
+    --primary: 163 100% 42%;
+    --primary-foreground: 220 25% 6%;
+    --secondary: 220 10% 13%;
+    --secondary-foreground: 210 20% 92%;
+    --muted: 220 9% 13%;
+    --muted-foreground: 216 9% 58%;
+    --accent: 220 10% 15%;
+    --accent-foreground: 210 20% 94%;
+    --destructive: 2 84% 64%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 220 9% 16%;
+    --input: 220 9% 20%;
+    --ring: 163 100% 42%;
+    --radius: 0.5rem;
+    --sidebar-background: 220 12% 6.5%;
+    --sidebar-foreground: 216 9% 62%;
+    --sidebar-primary: 163 100% 42%;
+    --sidebar-primary-foreground: 220 25% 6%;
+    --sidebar-accent: 220 10% 12%;
+    --sidebar-accent-foreground: 210 20% 96%;
+    --sidebar-border: 220 9% 14%;
+    --sidebar-ring: 163 100% 42%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  html {
+    color-scheme: dark;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: 'Inter', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  }
+  ::selection {
+    background: hsl(var(--primary));
+    color: hsl(var(--primary-foreground));
+  }
+}
+
+@layer utilities {
+  .font-display {
+    font-family: 'Space Grotesk', 'Inter', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  }
+  /* 全大写 + 宽字距的界面标签 */
+  .ui-label {
+    @apply text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground;
+  }
+  /* LED 状态灯：实心点 + 同色系辉光 */
+  .led {
+    @apply inline-block h-2 w-2 rounded-full;
+    box-shadow: 0 0 6px 1px currentColor;
+  }
+  /* 深色滚动条 */
+  .scrollbar-dark::-webkit-scrollbar {
+    height: 8px;
+    width: 8px;
+  }
+  .scrollbar-dark::-webkit-scrollbar-thumb {
+    background: hsl(220 9% 22%);
+    border-radius: 4px;
+  }
+  .scrollbar-dark::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
