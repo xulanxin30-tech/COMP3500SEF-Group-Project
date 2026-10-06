@@ -1,7 +1,4 @@
-/**
- * 库存查询：各仓库 SKU 库存、安全库存预警与关键词检索
- */
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Boxes, Search, TriangleAlert, Warehouse } from 'lucide-react'
 import { toast } from 'sonner'
 import { inventoryApi } from '@/api'
@@ -28,36 +25,44 @@ export default function Inventory() {
   const [list, setList] = useState<InventoryItem[]>([])
   const [loading, setLoading] = useState(true)
 
+  const requestId = useRef(0)
+
   const load = useCallback(async () => {
+    const currentRequest = ++requestId.current
     setLoading(true)
     try {
       const data = await inventoryApi.list()
+      if (currentRequest !== requestId.current) return
       setList(data)
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : '库存数据加载失败')
+      if (currentRequest !== requestId.current) return
+      toast.error(err instanceof ApiError ? err.message : 'Unable to load inventory')
     } finally {
-      setLoading(false)
+      if (currentRequest === requestId.current) setLoading(false)
     }
   }, [])
 
   useEffect(() => {
-    load()
+    const requests = requestId
+    const frame = requestAnimationFrame(() => { void load() })
+    return () => {
+      cancelAnimationFrame(frame)
+      requests.current++
+    }
   }, [load])
 
   function handleSearch(e: React.FormEvent) {
     e.preventDefault()
     setSubmittedKeyword(keyword.trim())
   }
-
-  // 关键词本地过滤（数据量小，无需再走一次请求）
   const kw = submittedKeyword.toLowerCase()
   const filtered = kw
     ? list.filter(
         (i) =>
           i.sku.toLowerCase().includes(kw) ||
           i.name.toLowerCase().includes(kw) ||
-          i.category.includes(kw) ||
-          i.warehouse.includes(kw),
+          i.category.toLowerCase().includes(kw) ||
+          i.warehouse.toLowerCase().includes(kw),
       )
     : list
 
@@ -65,9 +70,9 @@ export default function Inventory() {
   const alertCount = filtered.filter((i) => i.quantity < i.safetyStock).length
 
   const statCards = [
-    { label: 'SKU 总数', value: filtered.length, suffix: '个', icon: Boxes },
-    { label: '库存总量', value: totalQuantity, suffix: '', icon: Warehouse },
-    { label: '低于安全库存', value: alertCount, suffix: '项', icon: TriangleAlert, danger: true },
+    { label: 'Total SKUs', value: filtered.length, suffix: 'SKUs', icon: Boxes },
+    { label: 'Total stock', value: totalQuantity, suffix: '', icon: Warehouse },
+    { label: 'Below safety stock', value: alertCount, suffix: 'items', icon: TriangleAlert, danger: true },
   ]
 
   return (
@@ -75,7 +80,7 @@ export default function Inventory() {
       <div className="flex items-end justify-between">
         <div>
           <div className="ui-label">INVENTORY</div>
-          <h1 className="font-display mt-1 text-2xl font-semibold tracking-tight">库存查询</h1>
+          <h1 className="font-display mt-1 text-2xl font-semibold tracking-tight">Inventory</h1>
         </div>
         <form onSubmit={handleSearch} className="flex items-center gap-2">
           <div className="relative">
@@ -83,17 +88,15 @@ export default function Inventory() {
             <Input
               value={keyword}
               onChange={(e) => setKeyword(e.target.value)}
-              placeholder="搜索 SKU / 名称 / 类别 / 仓库"
+              placeholder="Search SKU, name, category or warehouse"
               className="h-10 w-72 border-input bg-card pl-9"
             />
           </div>
           <Button type="submit" variant="secondary" className="h-10">
-            查询
+            Search
           </Button>
         </form>
       </div>
-
-      {/* 统计卡片 */}
       <div className="grid grid-cols-2 gap-4 xl:grid-cols-3">
         {statCards.map(({ label, value, suffix, icon: Icon, danger }) => (
           <div key={label} className="rounded-lg border border-border bg-card p-4">
@@ -112,7 +115,7 @@ export default function Inventory() {
                       danger && value > 0 ? 'text-red-300' : 'text-foreground',
                     )}
                   >
-                    {value.toLocaleString('zh-CN')}
+                    {value.toLocaleString('en-GB')}
                   </span>
                   <span className="text-xs text-muted-foreground">{suffix}</span>
                 </>
@@ -121,20 +124,18 @@ export default function Inventory() {
           </div>
         ))}
       </div>
-
-      {/* 库存表格 */}
       <div className="overflow-hidden rounded-lg border border-border bg-card">
         <Table>
           <TableHeader>
             <TableRow className="border-border hover:bg-transparent">
               <TableHead className="ui-label w-32">SKU</TableHead>
-              <TableHead className="ui-label">货品名称</TableHead>
-              <TableHead className="ui-label">类别</TableHead>
-              <TableHead className="ui-label">仓库</TableHead>
-              <TableHead className="ui-label text-right">可用库存</TableHead>
-              <TableHead className="ui-label text-right">安全库存</TableHead>
-              <TableHead className="ui-label">状态</TableHead>
-              <TableHead className="ui-label w-36">更新时间</TableHead>
+              <TableHead className="ui-label">Item name</TableHead>
+              <TableHead className="ui-label">Category</TableHead>
+              <TableHead className="ui-label">Warehouse</TableHead>
+              <TableHead className="ui-label text-right">Available stock</TableHead>
+              <TableHead className="ui-label text-right">Safety stock</TableHead>
+              <TableHead className="ui-label">Status</TableHead>
+              <TableHead className="ui-label w-36">Updated</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -153,7 +154,7 @@ export default function Inventory() {
                 <TableCell colSpan={8} className="h-40 text-center">
                   <div className="flex flex-col items-center gap-2 text-muted-foreground">
                     <Boxes className="h-8 w-8 opacity-40" />
-                    <span className="text-sm">没有符合条件的库存记录</span>
+                    <span className="text-sm">No matching inventory records</span>
                   </div>
                 </TableCell>
               </TableRow>
@@ -170,7 +171,7 @@ export default function Inventory() {
                     <TableCell className="text-sm text-muted-foreground">{item.category}</TableCell>
                     <TableCell className="text-sm">{item.warehouse}</TableCell>
                     <TableCell className="text-right text-sm tabular-nums">
-                      {item.quantity.toLocaleString('zh-CN')} {item.unit}
+                      {item.quantity.toLocaleString('en-GB')} {item.unit}
                     </TableCell>
                     <TableCell className="text-right text-sm tabular-nums text-muted-foreground">
                       {item.safetyStock}
@@ -179,11 +180,11 @@ export default function Inventory() {
                       {low ? (
                         <Badge variant="destructive" className="gap-1">
                           <TriangleAlert className="h-3 w-3" />
-                          需补货
+                          Restock
                         </Badge>
                       ) : (
                         <Badge variant="outline" className="border-emerald-500/40 text-emerald-300">
-                          正常
+                          Normal
                         </Badge>
                       )}
                     </TableCell>

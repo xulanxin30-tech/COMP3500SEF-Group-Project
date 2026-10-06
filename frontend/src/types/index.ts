@@ -1,40 +1,39 @@
-/**
- * 全局类型定义
- * 物流管理系统（Logistics Management System）
- */
-
-/** 订单状态 */
+/** Frontend contracts for the local demo API and browser mock. */
 export type OrderStatus =
-  | 'PENDING' // 待揽收
-  | 'IN_TRANSIT' // 运输中
-  | 'DELIVERING' // 派送中
-  | 'SIGNED' // 已签收
-  | 'EXCEPTION' // 异常
+  | 'PENDING'
+  | 'IN_TRANSIT'
+  | 'DELIVERING'
+  | 'SIGNED'
+  | 'EXCEPTION'
 
 export interface Order {
   id: string
-  /** 订单号，如 YD20260916001 */
+
+  /** Human-readable order reference, e.g. YD202610061001. */
   orderNo: string
-  /** 客户公司 */
+
   customer: string
-  /** 发货城市 */
+
   origin: string
-  /** 收货城市 */
+
   destination: string
-  /** 货物名称 */
+
   cargo: string
-  /** 件数 */
+
   pieces: number
-  /** 重量（kg） */
+
   weightKg: number
-  /** 运费（元） */
+
+  /** Freight charge in CNY. */
   freight: number
   status: OrderStatus
-  /** 承运司机 */
+
   driver: string
-  /** 创建时间 ISO 字符串 */
+
+  /** ISO timestamp. */
   createdAt: string
-  /** 最近更新时间 ISO 字符串 */
+
+  /** ISO timestamp of the most recent change. */
   updatedAt: string
 }
 
@@ -76,7 +75,6 @@ export interface OrderStats {
   signedRate: number
 }
 
-/** 下单请求体 */
 export interface CreateOrderPayload {
   customer: string
   origin: string
@@ -88,37 +86,36 @@ export interface CreateOrderPayload {
   driver?: string
 }
 
-/** 库存条目 */
 export interface InventoryItem {
   id: string
   sku: string
   name: string
   category: string
-  /** 所在仓库 */
+
   warehouse: string
   quantity: number
   unit: string
-  /** 安全库存，低于该值触发预警 */
+
+  /** Show a restock alert when quantity falls below this value. */
   safetyStock: number
   updatedAt: string
 }
 
-/** 运单状态 */
 export type WaybillStatus =
-  | 'PENDING' // 待揽收
-  | 'IN_TRANSIT' // 运输中
-  | 'DELIVERING' // 派送中
-  | 'SIGNED' // 已签收
-  | 'EXCEPTION' // 异常
-  | 'CANCELLED' // 已取消（回补库存）
+  | 'PENDING'
+  | 'IN_TRANSIT'
+  | 'DELIVERING'
+  | 'SIGNED'
+  | 'EXCEPTION'
+  | 'CANCELLED'
 
-/** 运单 */
 export interface Waybill {
   id: string
   waybillNo: string
-  /** 关联订单号 */
+
   orderNo: string
-  /** 建单时扣减的库存 SKU */
+
+  /** SKU whose stock was deducted when the waybill was created. */
   sku: string
   cargoName: string
   quantity: number
@@ -135,7 +132,6 @@ export interface Waybill {
   updatedAt: string
 }
 
-/** 建运单请求体（sku + quantity 用于扣库存） */
 export interface CreateWaybillPayload {
   sku: string
   quantity: number
@@ -148,7 +144,6 @@ export interface CreateWaybillPayload {
   receiverAddress?: string
 }
 
-/** 统一后端响应壳 */
 export interface ApiResponse<T> {
   code: number
   message: string

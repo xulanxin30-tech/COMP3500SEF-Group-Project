@@ -1,7 +1,4 @@
-/**
- * 全局状态管理（zustand）
- * 当前承载登录态；后续迭代的筛选条件、用户偏好等也收敛到 store 层。
- */
+/** Persist the current session so route guards survive browser reloads. */
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { User } from '@/types'

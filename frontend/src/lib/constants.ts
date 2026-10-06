@@ -1,7 +1,7 @@
-/** 城市与人员词表（Mock 层与表单选项共用） */
+/** Demo city and driver options shared by forms and browser mock data. */
 export const CITIES = [
-  '深圳', '广州', '上海', '杭州', '北京', '成都', '武汉', '东莞',
-  '苏州', '南京', '重庆', '长沙', '佛山', '宁波', '郑州',
+  'Shenzhen', 'Guangzhou', 'Shanghai', 'Hangzhou', 'Beijing', 'Chengdu', 'Wuhan', 'Dongguan',
+  'Suzhou', 'Nanjing', 'Chongqing', 'Changsha', 'Foshan', 'Ningbo', 'Zhengzhou',
 ]
 
-export const DRIVERS = ['陈国辉', '李俊杰', '王志强', '张伟民', '刘建军', '赵晓东', '孙立军', '周文斌']
+export const DRIVERS = ['Chen Guohui', 'Li Junjie', 'Wang Zhiqiang', 'Zhang Weimin', 'Liu Jianjun', 'Zhao Xiaodong', 'Sun Lijun', 'Zhou Wenbin']

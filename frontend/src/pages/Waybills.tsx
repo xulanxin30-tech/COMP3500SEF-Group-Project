@@ -1,7 +1,4 @@
-/**
- * 运单管理：建运单（服务端扣减库存）+ 改运单状态 + 运单列表
- */
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { FileText, Loader2, PackageX, Plus, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
 import { inventoryApi, waybillApi } from '@/api'
@@ -46,31 +43,41 @@ export default function Waybills() {
   const [createOpen, setCreateOpen] = useState(false)
   const [updatingId, setUpdatingId] = useState<string | null>(null)
 
+  const requestId = useRef(0)
+
   const load = useCallback(async () => {
+    const currentRequest = ++requestId.current
     setLoading(true)
     try {
       const [wb, inv] = await Promise.all([waybillApi.list(), inventoryApi.list()])
+      if (currentRequest !== requestId.current) return
       setWaybills(wb)
       setInventory(inv)
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : '数据加载失败')
+      if (currentRequest !== requestId.current) return
+      toast.error(err instanceof ApiError ? err.message : 'Unable to load data')
     } finally {
-      setLoading(false)
+      if (currentRequest === requestId.current) setLoading(false)
     }
   }, [])
 
   useEffect(() => {
-    load()
+    const requests = requestId
+    const frame = requestAnimationFrame(() => { void load() })
+    return () => {
+      cancelAnimationFrame(frame)
+      requests.current++
+    }
   }, [load])
 
   async function handleStatusChange(id: string, status: WaybillStatus) {
     setUpdatingId(id)
     try {
       await waybillApi.updateStatus(id, status)
-      toast.success(`运单状态已更新为「${WAYBILL_STATUS_META[status].label}」`)
+      toast.success(`Waybill status updated to ${WAYBILL_STATUS_META[status].label}`)
       await load()
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : '状态更新失败')
+      toast.error(err instanceof ApiError ? err.message : 'Unable to update status')
     } finally {
       setUpdatingId(null)
     }
@@ -81,16 +88,16 @@ export default function Waybills() {
       <div className="flex items-end justify-between">
         <div>
           <div className="ui-label">WAYBILL</div>
-          <h1 className="font-display mt-1 text-2xl font-semibold tracking-tight">运单管理</h1>
+          <h1 className="font-display mt-1 text-2xl font-semibold tracking-tight">Waybills</h1>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="secondary" className="h-10" onClick={load}>
             <RefreshCw className="mr-2 h-4 w-4" />
-            刷新
+            Refresh
           </Button>
           <Button className="h-10" onClick={() => setCreateOpen(true)}>
             <Plus className="mr-2 h-4 w-4" />
-            新建运单
+            New waybill
           </Button>
         </div>
       </div>
@@ -99,13 +106,13 @@ export default function Waybills() {
         <Table>
           <TableHeader>
             <TableRow className="border-border hover:bg-transparent">
-              <TableHead className="ui-label w-40">运单号</TableHead>
-              <TableHead className="ui-label">货物 / SKU</TableHead>
-              <TableHead className="ui-label text-right">数量</TableHead>
-              <TableHead className="ui-label">发货 → 收货</TableHead>
-              <TableHead className="ui-label">仓库</TableHead>
-              <TableHead className="ui-label">状态</TableHead>
-              <TableHead className="ui-label w-36">创建时间</TableHead>
+              <TableHead className="ui-label w-40">Waybill number</TableHead>
+              <TableHead className="ui-label">Cargo / SKU</TableHead>
+              <TableHead className="ui-label text-right">Quantity</TableHead>
+              <TableHead className="ui-label">Sender → Receiver</TableHead>
+              <TableHead className="ui-label">Warehouse</TableHead>
+              <TableHead className="ui-label">Status</TableHead>
+              <TableHead className="ui-label w-36">Created</TableHead>
               <TableHead className="ui-label w-28"></TableHead>
             </TableRow>
           </TableHeader>
@@ -125,7 +132,7 @@ export default function Waybills() {
                 <TableCell colSpan={8} className="h-40 text-center">
                   <div className="flex flex-col items-center gap-2 text-muted-foreground">
                     <FileText className="h-8 w-8 opacity-40" />
-                    <span className="text-sm">还没有运单，点击右上角「新建运单」开始</span>
+                    <span className="text-sm">No waybills yet. Select New waybill to get started.</span>
                   </div>
                 </TableCell>
               </TableRow>
@@ -165,7 +172,7 @@ export default function Waybills() {
                         disabled={updatingId === wb.id}
                         onValueChange={(v) => handleStatusChange(wb.id, v as WaybillStatus)}
                       >
-                        <SelectTrigger className="h-8 w-24 border-input bg-card text-xs">
+                        <SelectTrigger className="h-8 w-40 border-input bg-card text-xs">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
@@ -192,8 +199,6 @@ export default function Waybills() {
   )
 }
 
-/* ================= 建运单弹窗 ================= */
-
 interface CreateWaybillDialogProps {
   open: boolean
   inventory: InventoryItem[]
@@ -216,8 +221,8 @@ function CreateWaybillDialog({ open, inventory, onOpenChange, onCreated }: Creat
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!sku || !qty || !senderName.trim() || !receiverName.trim()) {
-      toast.error('请选择 SKU 并填写数量、发货人与收货人')
+    if (!sku || !Number.isSafeInteger(qty) || qty <= 0 || !senderName.trim() || !receiverName.trim()) {
+      toast.error('Select a SKU and enter quantity, sender and receiver')
       return
     }
     setLoading(true)
@@ -230,13 +235,13 @@ function CreateWaybillDialog({ open, inventory, onOpenChange, onCreated }: Creat
         receiverName: receiverName.trim(),
         receiverAddress: receiverAddress.trim(),
       })
-      toast.success(`运单 ${wb.waybillNo} 已生成，已扣减 ${wb.quantity}${wb.unit}`)
+      toast.success(`Waybill ${wb.waybillNo} created. Stock deducted: ${wb.quantity} ${wb.unit}`)
       setSku(''); setQuantity(''); setSenderName(''); setReceiverName('')
       setSenderAddress(''); setReceiverAddress('')
       onOpenChange(false)
       onCreated()
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : '建单失败')
+      toast.error(err instanceof ApiError ? err.message : 'Unable to create waybill')
     } finally {
       setLoading(false)
     }
@@ -246,25 +251,25 @@ function CreateWaybillDialog({ open, inventory, onOpenChange, onCreated }: Creat
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-xl bg-card">
         <DialogHeader>
-          <DialogTitle>新建运单</DialogTitle>
-          <DialogDescription>提交后服务端校验并扣减对应 SKU 的库存。</DialogDescription>
+          <DialogTitle>New waybill</DialogTitle>
+          <DialogDescription>The server validates the request and deducts stock for the selected SKU.</DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
             <Label className="ui-label">SKU *</Label>
             <Select value={sku} onValueChange={setSku}>
-              <SelectTrigger className={cn('w-full', inputCls)}>{sku || '选择 SKU'}</SelectTrigger>
+              <SelectTrigger className={cn('w-full', inputCls)}>{sku || 'Select SKU'}</SelectTrigger>
               <SelectContent>
                 {inventory.map((i) => (
                   <SelectItem key={i.sku} value={i.sku}>
-                    {i.sku} · {i.name}（可用 {i.quantity}{i.unit}）
+                    {i.sku} · {i.name} (available: {i.quantity} {i.unit})
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
           <div className="space-y-2">
-            <Label className="ui-label">数量 *</Label>
+            <Label className="ui-label">Quantity *</Label>
             <Input
               type="number"
               min={1}
@@ -277,42 +282,42 @@ function CreateWaybillDialog({ open, inventory, onOpenChange, onCreated }: Creat
           {item && (
             <div className="col-span-2 flex items-center justify-between rounded-md border border-border bg-secondary/30 px-3 py-2 text-xs">
               <span className="text-muted-foreground">
-                当前可用库存
+                Available stock
                 <span className="ml-2 font-medium text-foreground">
-                  {item.quantity}{item.unit}
+                  {item.quantity} {item.unit}
                 </span>
-                {insufficient && <span className="ml-2 text-red-300">· 超出可用库存</span>}
+                {insufficient && <span className="ml-2 text-red-300">· Exceeds available stock</span>}
               </span>
               <span className="text-muted-foreground">{item.warehouse}</span>
             </div>
           )}
           <div className="space-y-2">
-            <Label className="ui-label">发货人 *</Label>
-            <Input value={senderName} onChange={(e) => setSenderName(e.target.value)} placeholder="姓名" className={inputCls} />
+            <Label className="ui-label">Sender *</Label>
+            <Input value={senderName} onChange={(e) => setSenderName(e.target.value)} placeholder="Name" className={inputCls} />
           </div>
           <div className="space-y-2">
-            <Label className="ui-label">收货人 *</Label>
-            <Input value={receiverName} onChange={(e) => setReceiverName(e.target.value)} placeholder="姓名" className={inputCls} />
+            <Label className="ui-label">Receiver *</Label>
+            <Input value={receiverName} onChange={(e) => setReceiverName(e.target.value)} placeholder="Name" className={inputCls} />
           </div>
           <div className="col-span-2 space-y-2">
-            <Label className="ui-label">发货地址</Label>
-            <Input value={senderAddress} onChange={(e) => setSenderAddress(e.target.value)} placeholder="详细地址" className={inputCls} />
+            <Label className="ui-label">Sender address</Label>
+            <Input value={senderAddress} onChange={(e) => setSenderAddress(e.target.value)} placeholder="Full address" className={inputCls} />
           </div>
           <div className="col-span-2 space-y-2">
-            <Label className="ui-label">收货地址</Label>
-            <Input value={receiverAddress} onChange={(e) => setReceiverAddress(e.target.value)} placeholder="详细地址" className={inputCls} />
+            <Label className="ui-label">Receiver address</Label>
+            <Input value={receiverAddress} onChange={(e) => setReceiverAddress(e.target.value)} placeholder="Full address" className={inputCls} />
           </div>
           <DialogFooter className="col-span-2 mt-2">
             {insufficient && (
               <span className="mr-auto flex items-center gap-1 text-xs text-red-300">
                 <PackageX className="h-3.5 w-3.5" />
-                库存不足，无法提交
+                Insufficient stock. Cannot submit
               </span>
             )}
-            <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>取消</Button>
+            <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>Cancel</Button>
             <Button type="submit" disabled={loading || insufficient}>
               {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {loading ? '提交中…' : '提交并扣库存'}
+              {loading ? 'Submitting…' : 'Create and deduct stock'}
             </Button>
           </DialogFooter>
         </form>

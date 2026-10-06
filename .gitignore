@@ -21,5 +21,6 @@ backend/lms.db*
 Thumbs.db
 
 # --- Others ---
+/output/playwright/
 *.tmp
 *.bak

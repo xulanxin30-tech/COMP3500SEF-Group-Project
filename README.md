@@ -9,19 +9,22 @@ and testing evidence.
 
 ## Current status
 
-The repository is an initial example skeleton. The components below can be
-checked separately; the complete logistics workflow has not been implemented.
+The repository includes a frontend workflow demo and a separate persistent
+backend. Integration between these components and the complete logistics
+workflow remain unfinished.
 
 | Component | Available now | Work still planned |
 | --- | --- | --- |
-| Frontend | Static HTML, CSS and JavaScript; a sign-in form with an alert button | Authentication, business screens and API integration |
+| Frontend | React/TypeScript screens for sign in, orders, inventory and waybills, connected to a local Node demo API | Integration with the shared Python/SQLite API and remaining modules |
 | Backend | Python standard-library HTTP server with SQLite persistence for schema v1.1 | Formal user authentication and remaining workflow screens |
 | Database | SQLite schema v1.1 (`users`, `hubs`, `items`, `shipments`, `shipment_items`, `tracking_events`) plus Hong Kong seed data | Database selection beyond SQLite and a migration approach |
-| Tests | HTTP API, write-path and listen-address regression tests; three freight examples | Frontend and complete user-workflow tests |
+| Tests | Python HTTP API tests and freight examples; Node and browser-mock workflow regression tests | Automated browser and complete shared-backend workflow tests |
 | Delivery | Source files, team documentation, Dockerfile and GitHub Actions build/test workflow | Deployment and release automation |
 
-The backend loads `database/schema.sql` into SQLite on first start. The active
-frontend still does not call the API; the sign-in form does not check credentials.
+The backend loads `database/schema.sql` into SQLite on first start.
+The frontend uses its own in-memory Node demo API under `frontend/server/`.
+It checks demo credentials and supports waybill stock deduction and cancellation.
+It is not yet connected to the Python/SQLite API; their contracts differ.
 
 ## Documentation
 
@@ -50,9 +53,10 @@ frontend still does not call the API; the sign-in form does not check credential
 ├── docs/
 │   └── PROJECT.md
 ├── frontend/
-│   ├── index.html
-│   ├── style.css
-│   └── app.js
+│   ├── src/
+│   ├── server/
+│   ├── tests/
+│   └── package.json
 ├── backend/
 │   └── server.py
 ├── database/
@@ -64,8 +68,9 @@ frontend still does not call the API; the sign-in form does not check credential
 
 ## Run the examples locally
 
-Use a browser and Python 3. The backend and tests use only the Python standard
-library; no package installation is needed. The examples have been checked with
+Use a browser, Python 3 and Node.js 22.12 or later. The backend and Python tests
+use only the Python standard library; no Python package installation is needed.
+The Python examples have been checked with
 Python 3.12. Git is needed for the contribution workflow. The optional database
 check also needs the SQLite command-line tool, `sqlite3`.
 
@@ -81,10 +86,12 @@ starts successfully before continuing:
 
 ### Frontend
 
-Open the local [frontend/index.html](frontend/index.html) file in your browser.
-Entering a username and clicking the sign-in button displays a welcome alert;
-leaving the username empty displays a prompt. The password field has no effect.
-This example can be viewed without starting the backend.
+Use Node.js 22.12 or later. Run `cd frontend`, then `npm ci` and
+`npm run server`. In a second terminal under `frontend`, run `npm run dev`.
+Open http://localhost:3000 and sign in with `demo` / `demo123`.
+See the [frontend guide](frontend/README.md) for API configuration, browser-only
+mock mode, validation commands and the limits of the in-memory demo.
+Opening `index.html` directly does not start the React application.
 
 ### Backend
 
@@ -154,10 +161,15 @@ automatically assigned port. Three further tests cover positive, zero and
 negative weight in the sample `calc_freight` function. They do not establish
 coverage of the frontend or a production freight calculation.
 
-GitHub Actions runs the suite for pushes and PRs targeting `main`, builds the
+For frontend validation, run `npm test`, `npm run lint -- --max-warnings=0`
+and `npm run build` from `frontend`. The workflow suite checks the local HTTP
+API and browser mock; the [frontend guide](frontend/README.md) describes its scope.
+
+GitHub Actions runs the Python suite for pushes and PRs targeting `main`, builds the
 Docker image, starts the backend container and checks the health response through
 the published port. A startup or port-mapping failure fails CI; container logs
-are collected and the container is removed after the check.
+are collected and the container is removed after the check. A separate frontend
+job installs the locked dependencies and runs lint, workflow tests and a build.
 
 ### Optional database check
 

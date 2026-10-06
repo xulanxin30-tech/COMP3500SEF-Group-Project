@@ -1,9 +1,4 @@
-/**
- * Mock 数据层
- *
- * 后端 API 契约就绪前的本地实现。handler 的签名与真实接口返回结构保持一致，
- * 切换真实后端时只需关闭 VITE_USE_MOCK，无需改动任何业务代码。
- */
+/** Browser-only demo data. Mutations follow the local API's stock rules. */
 import { CITIES, DRIVERS } from '@/lib/constants'
 import type {
   ApiResponse,
@@ -22,7 +17,6 @@ import type {
   WaybillStatus,
 } from '@/types'
 
-/* ---------- 确定性伪随机（保证每次构建/刷新数据稳定） ---------- */
 function mulberry32(seed: number) {
   let a = seed
   return () => {
@@ -37,28 +31,26 @@ const rand = mulberry32(20260916)
 const pick = <T>(arr: T[]): T => arr[Math.floor(rand() * arr.length)]
 const int = (min: number, max: number) => Math.floor(rand() * (max - min + 1)) + min
 
-/* ---------- 基础词表 ---------- */
 const CUSTOMERS = [
-  '华南电子科技', '云杉供应链', '恒信五金', '蓝鲸跨境电商', '明志医疗器械',
-  '骏达汽配', '绿源食品', '星辰光电', '峰瑞建材', '优选日化',
+  'South China Electronics', 'Spruce Supply Chain', 'Hengxin Hardware', 'Blue Whale Commerce', 'Mingzhi Medical Devices',
+  'Junda Auto Parts', 'Green Source Foods', 'Starlight Optoelectronics', 'Fengrui Building Materials', 'Choice Household Products',
 ]
 const CARGOS = [
-  '电子元器件', '服装辅料', '精密仪器', '汽车配件', '冷冻食品',
-  '日化用品', '医疗耗材', '建材板材', '锂电池组', '办公设备',
+  'Electronic components', 'Garment accessories', 'Precision instruments', 'Auto parts', 'Frozen foods',
+  'Household products', 'Medical supplies', 'Building panels', 'Lithium battery packs', 'Office equipment',
 ]
 
 const STATUSES: Order['status'][] = [
   'PENDING', 'IN_TRANSIT', 'IN_TRANSIT', 'DELIVERING', 'SIGNED', 'SIGNED', 'SIGNED', 'EXCEPTION',
 ]
 
-/* ---------- 生成 56 条订单（时间分布在 09-16 ~ 09-30） ---------- */
 function buildOrders(): Order[] {
   const orders: Order[] = []
   for (let i = 0; i < 56; i++) {
     const day = int(16, 30)
     const created = new Date(2026, 8, day, int(8, 19), int(0, 59))
     const updated = new Date(created.getTime() + int(2, 72) * 3600_000)
-    let origin = pick(CITIES)
+    const origin = pick(CITIES)
     let destination = pick(CITIES)
     if (destination === origin) destination = pick(CITIES.filter((c) => c !== origin))
     orders.push({
@@ -82,26 +74,24 @@ function buildOrders(): Order[] {
 
 const ORDERS = buildOrders()
 
-/* ---------- 库存数据 ---------- */
-const WAREHOUSES = ['深圳前海仓', '广州白云仓', '上海浦东仓', '成都双流仓']
-const INVENTORY_CATEGORIES = ['电子元器件', '服装辅料', '精密仪器', '汽车配件', '日化用品', '建材板材']
+const WAREHOUSES = ['Shenzhen Qianhai Warehouse', 'Guangzhou Baiyun Warehouse', 'Shanghai Pudong Warehouse', 'Chengdu Shuangliu Warehouse']
+const INVENTORY_CATEGORIES = ['Electronic components', 'Garment accessories', 'Precision instruments', 'Auto parts', 'Household products', 'Building panels']
 
 function buildInventory(): InventoryItem[] {
   const items: InventoryItem[] = []
   for (let i = 0; i < 24; i++) {
     const category = INVENTORY_CATEGORIES[i % INVENTORY_CATEGORIES.length]
     const safetyStock = int(50, 200)
-    // 约四分之一的条目低于安全库存，便于展示预警
     const quantity = i % 4 === 0 ? int(5, safetyStock - 1) : int(safetyStock, 2000)
     const updated = new Date(2026, 9, int(1, 5), int(8, 20), int(0, 59))
     items.push({
       id: `inv-${i + 1}`,
       sku: `SKU-${String(1000 + i)}`,
-      name: `${CARGOS[i % CARGOS.length]}-${String(i + 1).padStart(2, '0')}号`,
+      name: `${CARGOS[i % CARGOS.length]}-${String(i + 1).padStart(2, '0')}`,
       category,
       warehouse: WAREHOUSES[i % WAREHOUSES.length],
       quantity,
-      unit: pick(['箱', '件', '托', '卷']),
+      unit: pick(['boxes', 'pieces', 'pallets', 'rolls']),
       safetyStock,
       updatedAt: updated.toISOString(),
     })
@@ -111,22 +101,28 @@ function buildInventory(): InventoryItem[] {
 
 const INVENTORY = buildInventory()
 
-/* ---------- 运单数据 ---------- */
 const WAYBILLS: Waybill[] = []
+let sequence = 1000
+const ORDER_STATUSES = ['PENDING', 'IN_TRANSIT', 'DELIVERING', 'SIGNED', 'EXCEPTION']
+const WAYBILL_STATUSES = [...ORDER_STATUSES, 'CANCELLED']
+const isText = (value: unknown): value is string => typeof value === 'string' && value.trim().length > 0
+const isPositiveInteger = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value > 0
+const isNonnegativeNumber = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value) && value >= 0
+const optionalText = (value: unknown) => value === undefined || typeof value === 'string'
+const safeUser = ({ id, username, displayName, role }: User): User => ({ id, username, displayName, role })
 
 function genWaybillNo(): string {
   const now = new Date()
   const pad = (n: number) => String(n).padStart(2, '0')
-  return `WB${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}${String(Math.floor(Math.random() * 9000) + 1000)}`
+  return `WB${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}${++sequence}`
 }
 
 const USERS: (User & { password: string })[] = [
-  { id: 'u-demo', username: 'demo', password: 'demo123', displayName: '演示用户', role: '运营专员' },
-  { id: 'u-1', username: 'admin', password: '123456', displayName: '池轩一', role: '前端开发' },
-  { id: 'u-2', username: 'dispatcher', password: '123456', displayName: '调度员', role: '调度专员' },
+  { id: 'u-demo', username: 'demo', password: 'demo123', displayName: 'Demo User', role: 'Operations Specialist' },
+  { id: 'u-1', username: 'admin', password: '123456', displayName: 'Chi Xuanyi', role: 'Frontend Developer' },
+  { id: 'u-2', username: 'dispatcher', password: '123456', displayName: 'Dispatcher', role: 'Dispatch Specialist' },
 ]
 
-/* ---------- Mock 路由表 ---------- */
 interface MockContext {
   data?: unknown
   params?: Record<string, string | number | undefined>
@@ -140,18 +136,16 @@ const routes: Record<string, MockHandler> = {
   'POST /auth/login': ({ data }) => {
     const { username, password } = (data ?? {}) as LoginPayload
     const user = USERS.find((u) => u.username === username && u.password === password)
-    if (!user) return fail(1001, '用户名或密码错误')
-    const { password: _pw, ...safeUser } = user
+    if (!user) return fail(1001, 'Invalid username or password')
     const result: LoginResult = {
       token: `mock-token-${user.id}-${Date.now()}`,
-      user: safeUser,
+      user: safeUser(user),
     }
-    return ok(result, '登录成功')
+    return ok(result, 'Signed in')
   },
 
   'GET /auth/profile': () => {
-    const { password: _pw, ...safeUser } = USERS[0]
-    return ok(safeUser)
+    return ok(safeUser(USERS[0]))
   },
 
   'GET /orders/stats': () => {
@@ -161,7 +155,7 @@ const routes: Record<string, MockHandler> = {
     const exception = ORDERS.filter((o) => o.status === 'EXCEPTION').length
     const signed = ORDERS.filter((o) => o.status === 'SIGNED').length
     const stats: OrderStats = {
-      todayCount: todayCount > 0 ? todayCount : 6,
+      todayCount,
       inTransit,
       exception,
       signedRate: Math.round((signed / ORDERS.length) * 1000) / 10,
@@ -176,6 +170,10 @@ const routes: Record<string, MockHandler> = {
       status: (params?.status as OrderQuery['status']) ?? 'ALL',
       keyword: params?.keyword ? String(params.keyword) : '',
     }
+    if (!isPositiveInteger(query.page) || !isPositiveInteger(query.pageSize) || query.pageSize > 100) {
+      return fail(1002, 'Page must be a positive integer; pageSize must be between 1 and 100')
+    }
+    if (query.status && query.status !== 'ALL' && !ORDER_STATUSES.includes(query.status)) return fail(1004, 'Invalid order status')
     let list = ORDERS
     if (query.status && query.status !== 'ALL') {
       list = list.filter((o) => o.status === query.status)
@@ -185,9 +183,9 @@ const routes: Record<string, MockHandler> = {
       list = list.filter(
         (o) =>
           o.orderNo.toLowerCase().includes(kw) ||
-          o.customer.includes(kw) ||
-          o.cargo.includes(kw) ||
-          o.driver.includes(kw),
+          o.customer.toLowerCase().includes(kw) ||
+          o.cargo.toLowerCase().includes(kw) ||
+          o.driver.toLowerCase().includes(kw),
       )
     }
     const start = (query.page - 1) * query.pageSize
@@ -200,47 +198,50 @@ const routes: Record<string, MockHandler> = {
     return ok(result)
   },
 
-  /** 下单 */
   'POST /orders': ({ data }) => {
     const payload = (data ?? {}) as Partial<CreateOrderPayload>
-    if (!payload.customer || !payload.origin || !payload.destination || !payload.cargo) {
-      return fail(1002, '请完整填写客户、线路与货物信息')
+    if (!isText(payload.customer) || !isText(payload.origin) || !isText(payload.destination) || !isText(payload.cargo) || !optionalText(payload.driver)) {
+      return fail(1002, 'Complete the customer, route and cargo details')
+    }
+    const pieces = payload.pieces ?? 1
+    const weightKg = payload.weightKg ?? 0
+    const freight = payload.freight ?? 0
+    if (!isPositiveInteger(pieces) || !isNonnegativeNumber(weightKg) || !isNonnegativeNumber(freight)) {
+      return fail(1002, 'Pieces must be a positive integer; weight and freight must be finite nonnegative numbers')
     }
     const now = new Date()
     const pad = (n: number) => String(n).padStart(2, '0')
     const orderNo = `YD${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}${String(ORDERS.length + 101)}`
     const order: Order = {
-      id: `order-${Date.now()}`,
+      id: `order-${++sequence}`,
       orderNo,
-      customer: payload.customer,
-      origin: payload.origin,
-      destination: payload.destination,
-      cargo: payload.cargo,
-      pieces: Number(payload.pieces) || 1,
-      weightKg: Number(payload.weightKg) || 0,
-      freight: Number(payload.freight) || 0,
+      customer: payload.customer.trim(),
+      origin: payload.origin.trim(),
+      destination: payload.destination.trim(),
+      cargo: payload.cargo.trim(),
+      pieces,
+      weightKg,
+      freight,
       status: 'PENDING',
-      driver: payload.driver || '待分配',
+      driver: payload.driver || 'Unassigned',
       createdAt: now.toISOString(),
       updatedAt: now.toISOString(),
     }
     ORDERS.unshift(order)
-    return ok(order, '下单成功')
+    return ok(order, 'Order created')
   },
 
-  /** 修改订单状态 */
   'PUT /orders/:id/status': ({ data, params }) => {
     const id = params?.id ? String(params.id) : ''
     const order = ORDERS.find((o) => o.id === id)
-    if (!order) return fail(1003, '订单不存在')
+    if (!order) return fail(1003, 'Order not found')
     const status = (data as { status?: OrderStatus })?.status
-    if (!status) return fail(1004, '缺少目标状态')
+    if (!status || !ORDER_STATUSES.includes(status)) return fail(1004, 'Invalid order status')
     order.status = status
     order.updatedAt = new Date().toISOString()
-    return ok(order, '状态已更新')
+    return ok(order, 'Status updated')
   },
 
-  /** 库存查询 */
   'GET /inventory': ({ params }) => {
     const keyword = params?.keyword ? String(params.keyword).toLowerCase() : ''
     if (!keyword) return ok(INVENTORY)
@@ -248,31 +249,32 @@ const routes: Record<string, MockHandler> = {
       (i) =>
         i.sku.toLowerCase().includes(keyword) ||
         i.name.toLowerCase().includes(keyword) ||
-        i.category.includes(keyword) ||
-        i.warehouse.includes(keyword),
+        i.category.toLowerCase().includes(keyword) ||
+        i.warehouse.toLowerCase().includes(keyword),
     )
     return ok(list)
   },
 
-  /** 运单列表 */
   'GET /waybills': () => ok([...WAYBILLS].sort((a, b) => b.createdAt.localeCompare(a.createdAt))),
 
-  /** 填运单（同步扣减库存） */
   'POST /waybills': ({ data }) => {
     const payload = (data ?? {}) as Partial<CreateWaybillPayload>
-    if (!payload.sku || !Number(payload.quantity) || !payload.senderName || !payload.receiverName) {
-      return fail(1005, '请填写 SKU、数量、发货人与收货人')
+    if (!isText(payload.sku) || !isText(payload.senderName) || !isText(payload.receiverName) ||
+        !['orderNo', 'senderPhone', 'senderAddress', 'receiverPhone', 'receiverAddress'].every((key) => optionalText(payload[key as keyof CreateWaybillPayload]))) {
+      return fail(1005, 'Enter SKU, quantity, sender and receiver')
     }
     const item = INVENTORY.find((i) => i.sku === payload.sku)
-    if (!item) return fail(2001, `SKU ${payload.sku} 不存在`)
-    const qty = Number(payload.quantity)
+    if (!item) return fail(2001, `SKU ${payload.sku} not found`)
+    const qty = payload.quantity
+    if (!isPositiveInteger(qty)) return fail(2002, 'Quantity must be a positive safe integer')
     if (item.quantity < qty) {
-      return fail(2003, `库存不足，${item.name} 当前可用 ${item.quantity}${item.unit}`)
+      return fail(2003, `Insufficient stock: ${item.name} available: ${item.quantity} ${item.unit}`)
     }
     item.quantity -= qty
+    item.updatedAt = new Date().toISOString()
     const now = new Date()
     const waybill: Waybill = {
-      id: `wb-${Date.now()}`,
+      id: `wb-${++sequence}`,
       waybillNo: genWaybillNo(),
       orderNo: payload.orderNo ?? `YD${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}0001`,
       sku: item.sku,
@@ -280,10 +282,10 @@ const routes: Record<string, MockHandler> = {
       quantity: qty,
       unit: item.unit,
       warehouse: item.warehouse,
-      senderName: payload.senderName,
+      senderName: payload.senderName.trim(),
       senderPhone: payload.senderPhone ?? '',
       senderAddress: payload.senderAddress ?? '',
-      receiverName: payload.receiverName,
+      receiverName: payload.receiverName.trim(),
       receiverPhone: payload.receiverPhone ?? '',
       receiverAddress: payload.receiverAddress ?? '',
       status: 'PENDING',
@@ -291,22 +293,30 @@ const routes: Record<string, MockHandler> = {
       updatedAt: now.toISOString(),
     }
     WAYBILLS.unshift(waybill)
-    return ok(waybill, `运单已生成，已扣减 ${qty}${item.unit}`)
+    return ok(waybill, `Waybill created. Stock deducted: ${qty} ${item.unit}`)
   },
 
-  /** 改运单状态 */
   'PUT /waybills/:id/status': ({ data, params }) => {
     const wb = WAYBILLS.find((w) => w.id === String(params?.id ?? ''))
-    if (!wb) return fail(1003, '运单不存在')
+    if (!wb) return fail(1003, 'Waybill not found')
     const status = (data as { status?: WaybillStatus })?.status
-    if (!status) return fail(1004, '缺少目标状态')
+    if (!status || !WAYBILL_STATUSES.includes(status)) return fail(1004, 'Invalid waybill status')
+    const item = INVENTORY.find((i) => i.sku === wb.sku)
+    if (status === 'CANCELLED' && wb.status !== 'CANCELLED' && item) {
+      item.quantity += wb.quantity
+      item.updatedAt = new Date().toISOString()
+    }
+    if (wb.status === 'CANCELLED' && status !== 'CANCELLED') {
+      if (!item || item.quantity < wb.quantity) return fail(2003, 'Insufficient stock to reactivate waybill')
+      item.quantity -= wb.quantity
+      item.updatedAt = new Date().toISOString()
+    }
     wb.status = status
     wb.updatedAt = new Date().toISOString()
-    return ok(wb, '运单状态已更新')
+    return ok(wb, 'Waybill status updated')
   },
 }
 
-/** 按「METHOD path」匹配 Mock 路由，支持 :param 形式的路径参数 */
 export function matchMock(method: string, url: string): MockHandler | undefined {
   const key = `${method.toUpperCase()} ${url}`
   const exact = routes[key]

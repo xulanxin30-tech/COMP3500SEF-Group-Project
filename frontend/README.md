@@ -1,64 +1,94 @@
-# 云链物流运营调度台（前端 + 本地后端）
+# Yunlian Logistics frontend
 
-React 19 + TypeScript + Vite + Tailwind（shadcn/ui）前端，配一个零依赖的 Node 本地后端。
+React 19, TypeScript, Vite and Tailwind CSS provide the order, inventory and
+waybill screens. A separate Node HTTP API supports the local workflow demo.
 
-## P2：已接真实后端，可走通完整流程
+## Run locally
 
-流程：**登录 → 看库存 → 建运单（扣库存）→ 改运单状态**
+Use Node.js 22.12 or later. From the repository root:
 
-### 启动
-
-```bash
-# 1) 启动后端（默认 8080，可用 PORT 覆盖）
+```sh
+cd frontend
+npm ci
 npm run server
+```
 
-# 2) 另开一个终端启动前端
+Keep that terminal open and start the frontend in a second terminal:
+
+```sh
+cd frontend
 npm run dev
 ```
 
-前端默认走真实后端，配置见 `.env`：
+Open http://localhost:3000 and sign in with `demo` / `demo123`.
+No `.env` file is required: Vite proxies `/api` to the local API on port 8080.
+`npm run preview` also proxies API requests when checking a production build.
+If the API uses a different `PORT`, set `VITE_API_BASE_URL` in a local `.env`
+file to its full API address, for example `http://127.0.0.1:8081/api/v1`.
+Restart Vite after changing environment variables.
 
-```
-VITE_USE_MOCK=false
-VITE_API_BASE_URL=http://localhost:8080/api/v1
-```
+The demo supports sign in → inventory → create waybill (deduct stock) → change
+status → cancel (restore stock). Repeated cancellation does not restore stock
+twice. Reactivation checks available stock before deducting it again.
 
-想回到纯前端 Mock 演示，把 `VITE_USE_MOCK` 改成 `true` 即可（业务代码无需改动）。
+The Node service binds to `127.0.0.1` and stores all data and sessions in memory.
+Restarting it resets orders, waybills and stock, and invalidates issued tokens.
+Sessions expire after eight hours. This service is separate from
+`backend/server.py`: the Python/SQLite API uses different routes and data
+contracts. Pointing this frontend directly at the Python API does not integrate
+the two implementations. Python integration and durable demo data remain future
+work.
 
-### 演示账号
+To run without a server, copy `.env.example` to `.env`, set `VITE_USE_MOCK=true`
+and restart Vite. Browser mock data resets on refresh. The header identifies
+whether the app is using `MOCK` or `LOCAL API` mode.
 
-`demo` / `demo123`
+## API contract
 
-### 后端接口（`server/server.js`，零依赖 Node http）
-
-| 方法 | 路径 | 说明 |
+| Method | Path | Behavior |
 | --- | --- | --- |
-| POST | `/api/v1/auth/login` | 登录，返回 token |
-| GET | `/api/v1/auth/profile` | 当前登录用户 |
-| GET | `/api/v1/inventory` | 库存列表 |
-| GET | `/api/v1/waybills` | 运单列表 |
-| POST | `/api/v1/waybills` | 建运单，服务端校验并**扣减库存** |
-| PUT | `/api/v1/waybills/:id/status` | 改运单状态（改为「已取消」时**回补库存**） |
-| GET/POST | `/api/v1/orders`、`/orders/stats` | 订单列表/统计/下单 |
-| PUT | `/api/v1/orders/:id/status` | 改订单状态 |
+| POST | `/api/v1/auth/login` | Issue a demo session token |
+| GET | `/api/v1/auth/profile` | Current demo user |
+| GET | `/api/v1/inventory` | Stock and safety-stock levels |
+| GET | `/api/v1/waybills` | List waybills |
+| POST | `/api/v1/waybills` | Validate a positive integer quantity and deduct stock |
+| PUT | `/api/v1/waybills/:id/status` | Update status, restoring stock on cancellation |
+| GET | `/api/v1/orders` | Search, filter and paginate orders |
+| GET | `/api/v1/orders/stats` | Actual order counts and delivery rate; today uses UTC |
+| POST | `/api/v1/orders` | Create an order |
+| PUT | `/api/v1/orders/:id/status` | Update a validated order status |
 
-统一响应壳 `{ code, message, data }`，`code !== 0` 为业务错误（如库存不足 `2003`）。
-除登录外所有接口需要 `Authorization: Bearer <token>`。
+Responses use `{ code, message, data }`. A nonzero `code` is an error, including
+`2003` for insufficient stock. Every endpoint except login requires an issued
+`Authorization: Bearer <token>`. Invalid authentication returns HTTP 401;
+malformed JSON returns 400 and oversized bodies return 413.
 
-### 页面
+## Validation
 
-- `/login` 登录
-- `/inventory` 库存查询（SKU / 仓库 / 安全库存预警）
-- `/waybills` 运单管理（建运单扣库存、改状态、取消回补）
-- `/orders` 订单管理（下单、改状态）
-
-## 目录
-
+```sh
+npm test
+npm run lint -- --max-warnings=0
+npm run build
+npm audit
 ```
-server/server.js     本地后端（零依赖）
-src/api              API 层（页面只依赖这里）
-src/lib/request.ts   请求封装：Mock / 真实后端一键切换、Token 注入
-src/mock             Mock 数据层（VITE_USE_MOCK=true 时生效）
-src/pages            页面
-src/types            类型定义
+
+The workflow suite exercises stock deduction, cancellation, reactivation,
+validation, unique references, search and statistics against both the HTTP API
+and browser mock. HTTP checks also cover forged tokens and malformed requests.
+GitHub Actions runs the frontend checks separately from the Python backend.
+
+Tailwind 4 replaces the vulnerable Tailwind 3 build dependency chain while
+retaining the configured theme. Browser requirements and migration details are
+in the [official upgrade guide](https://tailwindcss.com/docs/upgrade-guide).
+
+## Source layout
+
+```text
+server/server.js   In-memory Node demo API
+src/api           Typed API calls
+src/lib/request.ts HTTP/mock selection and token injection
+src/mock          Browser demo data and workflow handlers
+src/pages         Login, orders, inventory and waybill screens
+src/types         Shared frontend data contracts
+tests             HTTP and mock workflow regression tests
 ```

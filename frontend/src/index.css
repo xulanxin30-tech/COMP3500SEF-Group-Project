@@ -1,11 +1,10 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap');
 
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import 'tailwindcss';
+@config '../tailwind.config.js';
 
 @layer base {
-  /* 深色运营调度台主题：近黑底 + 薄荷绿主色 + 层级化灰阶文本 */
+
   :root {
     --background: 220 13% 5%;
     --foreground: 210 20% 96%;
@@ -47,7 +46,7 @@
   }
   body {
     @apply bg-background text-foreground antialiased;
-    font-family: 'Inter', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+    font-family: 'Inter', sans-serif;
   }
   ::selection {
     background: hsl(var(--primary));
@@ -57,18 +56,18 @@
 
 @layer utilities {
   .font-display {
-    font-family: 'Space Grotesk', 'Inter', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    font-family: 'Space Grotesk', 'Inter', sans-serif;
   }
-  /* 全大写 + 宽字距的界面标签 */
+
   .ui-label {
     @apply text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground;
   }
-  /* LED 状态灯：实心点 + 同色系辉光 */
+
   .led {
     @apply inline-block h-2 w-2 rounded-full;
     box-shadow: 0 0 6px 1px currentColor;
   }
-  /* 深色滚动条 */
+
   .scrollbar-dark::-webkit-scrollbar {
     height: 8px;
     width: 8px;

@@ -1,12 +1,6 @@
-/**
- * 云链物流 · 本地后端服务（零依赖，仅 Node 原生 http）
- *
- * 统一响应壳：{ code: 0, message, data }，code !== 0 表示业务错误
- * 演示账号：demo / demo123
- *
- * 启动：node server/server.js  （端口可用 PORT 环境变量覆盖，默认 8080）
- */
+/** In-memory API for the local frontend demo; separate from the Python/SQLite API. */
 import http from 'node:http'
+import { randomUUID } from 'node:crypto'
 
 const PORT = Number(process.env.PORT ?? 8080)
 const CORS_HEADERS = {
@@ -15,32 +9,29 @@ const CORS_HEADERS = {
   'Access-Control-Allow-Headers': 'Content-Type,Authorization',
 }
 
-/* ---------------- 演示数据 ---------------- */
+const ORDER_STATUSES = ['PENDING', 'IN_TRANSIT', 'DELIVERING', 'SIGNED', 'EXCEPTION']
+const WAYBILL_STATUSES = [...ORDER_STATUSES, 'CANCELLED']
+const sessions = new Map()
+const SESSION_TTL = 8 * 60 * 60 * 1000
+const isText = (value) => typeof value === 'string' && value.trim().length > 0
+const optionalText = (value) => value === undefined || typeof value === 'string'
+const positiveInteger = (value) => Number.isSafeInteger(value) && value > 0
+const nonnegativeNumber = (value) => typeof value === 'number' && Number.isFinite(value) && value >= 0
 
-const DRIVERS = ['陈国辉', '李俊杰', '王志强', '张伟民', '刘建军', '赵晓东', '孙立军', '周文斌']
-const CITIES = ['深圳', '广州', '上海', '杭州', '北京', '成都', '武汉', '东莞', '苏州', '南京']
-const CUSTOMERS = ['华南电子科技', '云杉供应链', '恒信五金', '蓝鲸跨境电商', '明志医疗器械', '骏达汽配']
-const CARGOS = ['电子元器件', '服装辅料', '精密仪器', '汽车配件', '冷冻食品', '日化用品', '建材板材']
-
-const pick = (arr) => arr[Math.floor(Math.random() * arr.length)]
-const int = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min
-
-/** 库存：建运单时会从这里扣减 */
 const inventory = [
-  { id: 'inv-1', sku: 'SKU-1001', name: '电子元器件-A01', category: '电子元器件', warehouse: '深圳前海仓', quantity: 1200, unit: '箱', safetyStock: 200 },
-  { id: 'inv-2', sku: 'SKU-1002', name: '服装辅料-B02', category: '服装辅料', warehouse: '广州白云仓', quantity: 860, unit: '卷', safetyStock: 150 },
-  { id: 'inv-3', sku: 'SKU-1003', name: '精密仪器-C03', category: '精密仪器', warehouse: '上海浦东仓', quantity: 120, unit: '台', safetyStock: 50 },
-  { id: 'inv-4', sku: 'SKU-1004', name: '汽车配件-D04', category: '汽车配件', warehouse: '成都双流仓', quantity: 45, unit: '件', safetyStock: 60 },
-  { id: 'inv-5', sku: 'SKU-1005', name: '冷冻食品-E05', category: '冷冻食品', warehouse: '深圳前海仓', quantity: 640, unit: '托', safetyStock: 100 },
-  { id: 'inv-6', sku: 'SKU-1006', name: '日化用品-F06', category: '日化用品', warehouse: '广州白云仓', quantity: 980, unit: '箱', safetyStock: 180 },
-  { id: 'inv-7', sku: 'SKU-1007', name: '医疗耗材-G07', category: '医疗耗材', warehouse: '上海浦东仓', quantity: 75, unit: '箱', safetyStock: 80 },
-  { id: 'inv-8', sku: 'SKU-1008', name: '建材板材-H08', category: '建材板材', warehouse: '成都双流仓', quantity: 540, unit: '托', safetyStock: 120 },
+  { id: 'inv-1', sku: 'SKU-1001', name: 'Electronic components-A01', category: 'Electronic components', warehouse: 'Shenzhen Qianhai Warehouse', quantity: 1200, unit: 'boxes', safetyStock: 200 },
+  { id: 'inv-2', sku: 'SKU-1002', name: 'Garment accessories-B02', category: 'Garment accessories', warehouse: 'Guangzhou Baiyun Warehouse', quantity: 860, unit: 'rolls', safetyStock: 150 },
+  { id: 'inv-3', sku: 'SKU-1003', name: 'Precision instruments-C03', category: 'Precision instruments', warehouse: 'Shanghai Pudong Warehouse', quantity: 120, unit: 'units', safetyStock: 50 },
+  { id: 'inv-4', sku: 'SKU-1004', name: 'Auto parts-D04', category: 'Auto parts', warehouse: 'Chengdu Shuangliu Warehouse', quantity: 45, unit: 'pieces', safetyStock: 60 },
+  { id: 'inv-5', sku: 'SKU-1005', name: 'Frozen foods-E05', category: 'Frozen foods', warehouse: 'Shenzhen Qianhai Warehouse', quantity: 640, unit: 'pallets', safetyStock: 100 },
+  { id: 'inv-6', sku: 'SKU-1006', name: 'Household products-F06', category: 'Household products', warehouse: 'Guangzhou Baiyun Warehouse', quantity: 980, unit: 'boxes', safetyStock: 180 },
+  { id: 'inv-7', sku: 'SKU-1007', name: 'Medical supplies-G07', category: 'Medical supplies', warehouse: 'Shanghai Pudong Warehouse', quantity: 75, unit: 'boxes', safetyStock: 80 },
+  { id: 'inv-8', sku: 'SKU-1008', name: 'Building panels-H08', category: 'Building panels', warehouse: 'Chengdu Shuangliu Warehouse', quantity: 540, unit: 'pallets', safetyStock: 120 },
 ]
 
 const waybills = []
 const orders = []
-
-/* ---------------- 工具函数 ---------------- */
+for (const item of inventory) item.updatedAt = new Date().toISOString()
 
 function json(res, data, { code = 0, message = 'ok', status = 200 } = {}) {
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', ...CORS_HEADERS })
@@ -49,19 +40,37 @@ function json(res, data, { code = 0, message = 'ok', status = 200 } = {}) {
 
 const fail = (res, code, message, status = 200) => json(res, null, { code, message, status })
 
+class HttpError extends Error {
+  constructor(status, message) {
+    super(message)
+    this.status = status
+  }
+}
+
 function readBody(req) {
   return new Promise((resolve, reject) => {
-    let raw = ''
+    const chunks = []
+    let size = 0
     req.on('data', (chunk) => {
-      raw += chunk
-      if (raw.length > 1e6) req.destroy()
+      size += chunk.length
+      if (size > 1e6) {
+        reject(new HttpError(413, 'Request body is too large'))
+        return
+      }
+      chunks.push(chunk)
     })
     req.on('end', () => {
+      if (size > 1e6) return
+      const raw = Buffer.concat(chunks).toString('utf8')
       if (!raw) return resolve({})
       try {
-        resolve(JSON.parse(raw))
+        const body = JSON.parse(raw)
+        if (!body || typeof body !== 'object' || Array.isArray(body)) {
+          throw new Error('Expected an object')
+        }
+        resolve(body)
       } catch {
-        reject(new Error('请求体不是合法 JSON'))
+        reject(new HttpError(400, 'Request body must be a JSON object'))
       }
     })
     req.on('error', reject)
@@ -70,11 +79,14 @@ function readBody(req) {
 
 function requireAuth(req, res) {
   const auth = req.headers.authorization ?? ''
-  if (!auth.startsWith('Bearer ')) {
-    fail(res, 401, '未登录或登录已过期', 401)
+  const token = auth.startsWith('Bearer ') ? auth.slice(7) : ''
+  const expires = sessions.get(token)
+  if (!expires || expires <= Date.now()) {
+    sessions.delete(token)
+    fail(res, 401, 'Sign in required or session expired', 401)
     return null
   }
-  return auth.slice(7)
+  return token
 }
 
 let seq = 1000
@@ -82,58 +94,58 @@ const nextId = (prefix) => `${prefix}-${++seq}`
 function genNo(prefix) {
   const d = new Date()
   const p = (n) => String(n).padStart(2, '0')
-  return `${prefix}${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}${String(int(1000, 9999))}`
+  return `${prefix}${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}${++seq}`
 }
-
-/* ---------------- 路由 ---------------- */
 
 const routes = {
   'POST /api/v1/auth/login': async (req, res) => {
     const { username, password } = await readBody(req)
     if (username === 'demo' && password === 'demo123') {
+      for (const [token, expires] of sessions) {
+        if (expires <= Date.now()) sessions.delete(token)
+      }
+      const token = randomUUID()
+      sessions.set(token, Date.now() + SESSION_TTL)
       return json(res, {
-        token: `demo-token-${Date.now()}`,
-        user: { id: 'u-demo', username: 'demo', displayName: '演示用户', role: '运营专员' },
-      }, { message: '登录成功' })
+        token,
+        user: { id: 'u-demo', username: 'demo', displayName: 'Demo User', role: 'Operations Specialist' },
+      }, { message: 'Signed in' })
     }
-    return fail(res, 1001, '用户名或密码错误')
+    return fail(res, 1001, 'Invalid username or password')
   },
 
   'GET /api/v1/auth/profile': (req, res) =>
     requireAuth(req, res)
-      ? json(res, { id: 'u-demo', username: 'demo', displayName: '演示用户', role: '运营专员' })
+      ? json(res, { id: 'u-demo', username: 'demo', displayName: 'Demo User', role: 'Operations Specialist' })
       : undefined,
 
-  /** 库存查询 */
   'GET /api/v1/inventory': (req, res) =>
     requireAuth(req, res)
-      ? json(res, inventory.map((i) => ({ ...i, updatedAt: new Date().toISOString() })))
+      ? json(res, inventory)
       : undefined,
 
-  /** 运单列表 */
   'GET /api/v1/waybills': (req, res) =>
     requireAuth(req, res)
       ? json(res, [...waybills].sort((a, b) => b.createdAt.localeCompare(a.createdAt)))
       : undefined,
 
-  /** 建运单并扣库存 */
   'POST /api/v1/waybills': async (req, res) => {
     if (!requireAuth(req, res)) return
     const body = await readBody(req)
     const { sku, quantity, senderName, receiverName } = body
-    if (!sku || !Number(quantity) || !senderName || !receiverName) {
-      return fail(res, 1002, '请填写 SKU、数量、发货人与收货人')
+    if (![sku, senderName, receiverName].every(isText) ||
+        !['orderNo', 'senderPhone', 'senderAddress', 'receiverPhone', 'receiverAddress'].every((key) => optionalText(body[key]))) {
+      return fail(res, 1002, 'Enter SKU, quantity, sender and receiver')
     }
     const item = inventory.find((i) => i.sku === sku)
-    if (!item) return fail(res, 2001, `SKU ${sku} 不存在`)
-    const qty = Number(quantity)
-    if (qty <= 0) return fail(res, 2002, '数量必须大于 0')
+    if (!item) return fail(res, 2001, `SKU ${sku} not found`)
+    const qty = quantity
+    if (!positiveInteger(qty)) return fail(res, 2002, 'Quantity must be a positive safe integer')
     if (item.quantity < qty) {
-      return fail(res, 2003, `库存不足，${item.name} 当前可用 ${item.quantity}${item.unit}`)
+      return fail(res, 2003, `Insufficient stock: ${item.name} available: ${item.quantity} ${item.unit}`)
     }
-
-    // 扣库存
     item.quantity -= qty
+    item.updatedAt = new Date().toISOString()
 
     const waybill = {
       id: nextId('wb'),
@@ -144,10 +156,10 @@ const routes = {
       quantity: qty,
       unit: item.unit,
       warehouse: item.warehouse,
-      senderName,
+      senderName: senderName.trim(),
       senderPhone: body.senderPhone ?? '',
       senderAddress: body.senderAddress ?? '',
-      receiverName,
+      receiverName: receiverName.trim(),
       receiverPhone: body.receiverPhone ?? '',
       receiverAddress: body.receiverAddress ?? '',
       status: 'PENDING',
@@ -155,40 +167,40 @@ const routes = {
       updatedAt: new Date().toISOString(),
     }
     waybills.unshift(waybill)
-    return json(res, waybill, { message: `运单已生成，已扣减 ${qty}${item.unit}` })
+    return json(res, waybill, { message: `Waybill created. Stock deducted: ${qty} ${item.unit}` })
   },
 
-  /** 改运单状态（取消时回补库存） */
   'PUT /api/v1/waybills/:id/status': async (req, res, params) => {
     if (!requireAuth(req, res)) return
     const wb = waybills.find((w) => w.id === params.id)
-    if (!wb) return fail(res, 1003, '运单不存在')
+    if (!wb) return fail(res, 1003, 'Waybill not found')
     const { status } = await readBody(req)
-    const allowed = ['PENDING', 'IN_TRANSIT', 'DELIVERING', 'SIGNED', 'EXCEPTION', 'CANCELLED']
-    if (!allowed.includes(status)) return fail(res, 1004, '非法的运单状态')
-
-    // 取消：把建单时扣掉的库存还回去
+    if (!WAYBILL_STATUSES.includes(status)) return fail(res, 1004, 'Invalid waybill status')
+    // Stock changes only when crossing the cancellation boundary.
     if (status === 'CANCELLED' && wb.status !== 'CANCELLED') {
       const item = inventory.find((i) => i.sku === wb.sku)
-      if (item) item.quantity += wb.quantity
+      if (item) {
+        item.quantity += wb.quantity
+        item.updatedAt = new Date().toISOString()
+      }
     }
-    // 已取消的运单再次启用：重新扣库存
     if (wb.status === 'CANCELLED' && status !== 'CANCELLED') {
       const item = inventory.find((i) => i.sku === wb.sku)
-      if (item) item.quantity -= wb.quantity
+      if (!item || item.quantity < wb.quantity) return fail(res, 2003, 'Insufficient stock to reactivate waybill')
+      item.quantity -= wb.quantity
+      item.updatedAt = new Date().toISOString()
     }
 
     wb.status = status
     wb.updatedAt = new Date().toISOString()
-    return json(res, wb, { message: '运单状态已更新' })
+    return json(res, wb, { message: 'Waybill status updated' })
   },
 
-  /* 以下为订单页保留接口，保证既有页面仍可演示 */
   'GET /api/v1/orders/stats': (req, res) => {
     if (!requireAuth(req, res)) return
     const signed = orders.filter((o) => o.status === 'SIGNED').length
     return json(res, {
-      todayCount: orders.length ? Math.max(6, orders.filter((o) => o.createdAt.slice(0, 10) === new Date().toISOString().slice(0, 10)).length) : 6,
+      todayCount: orders.filter((o) => o.createdAt.slice(0, 10) === new Date().toISOString().slice(0, 10)).length,
       inTransit: orders.filter((o) => o.status === 'IN_TRANSIT' || o.status === 'DELIVERING').length,
       exception: orders.filter((o) => o.status === 'EXCEPTION').length,
       signedRate: orders.length ? Math.round((signed / orders.length) * 1000) / 10 : 0,
@@ -197,10 +209,14 @@ const routes = {
 
   'GET /api/v1/orders': (req, res) => {
     if (!requireAuth(req, res)) return
-    const url = new URL(req.url, `http://${req.headers.host}`)
+    const url = new URL(req.url, 'http://localhost')
     const page = Number(url.searchParams.get('page') ?? 1)
     const pageSize = Number(url.searchParams.get('pageSize') ?? 10)
     const status = url.searchParams.get('status')
+    if (!positiveInteger(page) || !positiveInteger(pageSize) || pageSize > 100) {
+      return fail(res, 1002, 'Page must be a positive integer; pageSize must be between 1 and 100')
+    }
+    if (status && status !== 'ALL' && !ORDER_STATUSES.includes(status)) return fail(res, 1004, 'Invalid order status')
     const keyword = (url.searchParams.get('keyword') ?? '').toLowerCase()
     let list = orders
     if (status && status !== 'ALL') list = list.filter((o) => o.status === status)
@@ -211,38 +227,45 @@ const routes = {
   'POST /api/v1/orders': async (req, res) => {
     if (!requireAuth(req, res)) return
     const body = await readBody(req)
-    if (!body.customer || !body.cargo) return fail(res, 1002, '请填写客户与货物信息')
+    if (!['customer', 'origin', 'destination', 'cargo'].every((key) => isText(body[key])) || !optionalText(body.driver)) {
+      return fail(res, 1002, 'Complete the customer, route and cargo details')
+    }
+    const pieces = body.pieces ?? 1
+    const weightKg = body.weightKg ?? 0
+    const freight = body.freight ?? 0
+    if (!positiveInteger(pieces) || !nonnegativeNumber(weightKg) || !nonnegativeNumber(freight)) {
+      return fail(res, 1002, 'Pieces must be a positive integer; weight and freight must be finite nonnegative numbers')
+    }
     const order = {
       id: nextId('order'),
       orderNo: genNo('YD'),
-      customer: body.customer,
-      origin: body.origin ?? pick(CITIES),
-      destination: body.destination ?? pick(CITIES),
-      cargo: body.cargo,
-      pieces: Number(body.pieces) || 1,
-      weightKg: Number(body.weightKg) || 0,
-      freight: Number(body.freight) || 0,
+      customer: body.customer.trim(),
+      origin: body.origin.trim(),
+      destination: body.destination.trim(),
+      cargo: body.cargo.trim(),
+      pieces,
+      weightKg,
+      freight,
       status: 'PENDING',
-      driver: body.driver ?? pick(DRIVERS),
+      driver: body.driver?.trim() || 'Unassigned',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     }
     orders.unshift(order)
-    return json(res, order, { message: '下单成功' })
+    return json(res, order, { message: 'Order created' })
   },
 
   'PUT /api/v1/orders/:id/status': async (req, res, params) => {
     if (!requireAuth(req, res)) return
     const order = orders.find((o) => o.id === params.id)
-    if (!order) return fail(res, 1003, '订单不存在')
+    if (!order) return fail(res, 1003, 'Order not found')
     const { status } = await readBody(req)
+    if (!ORDER_STATUSES.includes(status)) return fail(res, 1004, 'Invalid order status')
     order.status = status
     order.updatedAt = new Date().toISOString()
-    return json(res, order, { message: '状态已更新' })
+    return json(res, order, { message: 'Status updated' })
   },
 }
-
-/* ---------------- 路由匹配（支持 :param） ---------------- */
 
 function match(method, pathname) {
   const key = `${method} ${pathname}`
@@ -264,23 +287,25 @@ function match(method, pathname) {
   return null
 }
 
-/* ---------------- 启动 ---------------- */
-
 const server = http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') {
     res.writeHead(204, CORS_HEADERS)
     return res.end()
   }
-  const { pathname } = new URL(req.url, `http://${req.headers.host}`)
-  const matched = match(req.method, pathname)
-  if (!matched) return fail(res, 404, `接口不存在: ${req.method} ${pathname}`, 404)
   try {
+    const { pathname } = new URL(req.url, 'http://localhost')
+    const matched = match(req.method, pathname)
+    if (!matched) return fail(res, 404, `Endpoint not found: ${req.method} ${pathname}`, 404)
     await matched.handler(req, res, matched.params)
   } catch (err) {
-    fail(res, 5000, err?.message ?? '服务内部错误', 500)
+    if (err instanceof URIError || err instanceof TypeError) {
+      return fail(res, 400, 'Invalid request URL', 400)
+    }
+    const status = err instanceof HttpError ? err.status : 500
+    fail(res, status === 500 ? 5000 : status, err instanceof HttpError ? err.message : 'Internal server error', status)
   }
 })
 
-server.listen(PORT, () => {
-  console.log(`[LMS] 后端已启动: http://localhost:${PORT}/api/v1  演示账号 demo / demo123`)
+server.listen(PORT, '127.0.0.1', () => {
+  console.log(`[LMS] Server listening: http://127.0.0.1:${server.address().port}/api/v1  Demo account demo / demo123`)
 })

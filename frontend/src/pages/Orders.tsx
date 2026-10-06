@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { ChevronLeft, ChevronRight, Search, TriangleAlert, Truck, PackageCheck, CalendarClock, FilePlus2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { orderApi } from '@/api'
@@ -32,24 +32,39 @@ export default function Orders() {
   const [createOpen, setCreateOpen] = useState(false)
   const [updatingId, setUpdatingId] = useState<string | null>(null)
 
+  const requestId = useRef(0)
+
   const load = useCallback(async () => {
+    const currentRequest = ++requestId.current
     setLoading(true)
     try {
       const [pageResult, statsResult] = await Promise.all([
         orderApi.list({ page, pageSize: PAGE_SIZE, status, keyword: submittedKeyword }),
         orderApi.stats(),
       ])
+      if (currentRequest !== requestId.current) return
+      const lastPage = Math.max(1, Math.ceil(pageResult.total / PAGE_SIZE))
+      if (page > lastPage) {
+        setPage(lastPage)
+        return
+      }
       setData(pageResult)
       setStats(statsResult)
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : '订单数据加载失败')
+      if (currentRequest !== requestId.current) return
+      toast.error(err instanceof ApiError ? err.message : 'Unable to load orders')
     } finally {
-      setLoading(false)
+      if (currentRequest === requestId.current) setLoading(false)
     }
   }, [page, status, submittedKeyword])
 
   useEffect(() => {
-    load()
+    const requests = requestId
+    const frame = requestAnimationFrame(() => { void load() })
+    return () => {
+      cancelAnimationFrame(frame)
+      requests.current++
+    }
   }, [load])
 
   const totalPages = data ? Math.max(1, Math.ceil(data.total / PAGE_SIZE)) : 1
@@ -69,37 +84,34 @@ export default function Orders() {
     setUpdatingId(id)
     try {
       await orderApi.updateStatus(id, next)
-      toast.success(`状态已更新为「${ORDER_STATUS_META[next].label}」`)
+      toast.success(`Status updated to ${ORDER_STATUS_META[next].label}`)
       await load()
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : '状态更新失败')
+      toast.error(err instanceof ApiError ? err.message : 'Unable to update status')
     } finally {
       setUpdatingId(null)
     }
   }
 
   const statCards = [
-    { label: '今日新增订单', value: stats?.todayCount, suffix: '单', icon: CalendarClock },
-    { label: '在途订单', value: stats?.inTransit, suffix: '单', icon: Truck },
-    { label: '异常订单', value: stats?.exception, suffix: '单', icon: TriangleAlert, danger: true },
-    { label: '签收率', value: stats?.signedRate, suffix: '%', icon: PackageCheck },
+    { label: 'Orders today', value: stats?.todayCount, suffix: 'orders', icon: CalendarClock },
+    { label: 'Orders in transit', value: stats?.inTransit, suffix: 'orders', icon: Truck },
+    { label: 'Orders with exceptions', value: stats?.exception, suffix: 'orders', icon: TriangleAlert, danger: true },
+    { label: 'Delivery rate', value: stats?.signedRate, suffix: '%', icon: PackageCheck },
   ]
 
   return (
     <div className="space-y-6">
-      {/* 页面标题 */}
       <div className="flex items-end justify-between">
         <div>
           <div className="ui-label">ORDER MANAGEMENT</div>
-          <h1 className="font-display mt-1 text-2xl font-semibold tracking-tight">订单管理</h1>
+          <h1 className="font-display mt-1 text-2xl font-semibold tracking-tight">Orders</h1>
         </div>
         <Button onClick={() => setCreateOpen(true)} className="h-10">
           <FilePlus2 className="mr-2 h-4 w-4" />
-          新建订单
+          New order
         </Button>
       </div>
-
-      {/* 统计卡片 */}
       <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
         {statCards.map(({ label, value, suffix, icon: Icon, danger }) => (
           <div key={label} className="rounded-lg border border-border bg-card p-4">
@@ -127,8 +139,6 @@ export default function Orders() {
           </div>
         ))}
       </div>
-
-      {/* 状态筛选 + 搜索 */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex flex-wrap items-center gap-1 rounded-lg border border-border bg-card p-1">
           {STATUS_TABS.map((tab) => (
@@ -152,30 +162,28 @@ export default function Orders() {
             <Input
               value={keyword}
               onChange={(e) => setKeyword(e.target.value)}
-              placeholder="搜索订单号 / 客户 / 货物 / 司机"
+              placeholder="Search order, customer, cargo or driver"
               className="h-10 w-72 border-input bg-card pl-9"
             />
           </div>
           <Button type="submit" variant="secondary" className="h-10">
-            查询
+            Search
           </Button>
         </form>
       </div>
-
-      {/* 订单表格 */}
       <div className="overflow-hidden rounded-lg border border-border bg-card">
         <Table>
           <TableHeader>
             <TableRow className="border-border hover:bg-transparent">
-              <TableHead className="ui-label w-44">订单号</TableHead>
-              <TableHead className="ui-label">客户</TableHead>
-              <TableHead className="ui-label">线路</TableHead>
-              <TableHead className="ui-label">货物</TableHead>
-              <TableHead className="ui-label text-right">重量</TableHead>
-              <TableHead className="ui-label text-right">运费</TableHead>
-              <TableHead className="ui-label">司机</TableHead>
-              <TableHead className="ui-label">状态</TableHead>
-              <TableHead className="ui-label w-36">创建时间</TableHead>
+              <TableHead className="ui-label w-44">Order number</TableHead>
+              <TableHead className="ui-label">Customer</TableHead>
+              <TableHead className="ui-label">Route</TableHead>
+              <TableHead className="ui-label">Cargo</TableHead>
+              <TableHead className="ui-label text-right">Weight</TableHead>
+              <TableHead className="ui-label text-right">Freight</TableHead>
+              <TableHead className="ui-label">Driver</TableHead>
+              <TableHead className="ui-label">Status</TableHead>
+              <TableHead className="ui-label w-36">Created</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -194,7 +202,7 @@ export default function Orders() {
                 <TableCell colSpan={9} className="h-40 text-center">
                   <div className="flex flex-col items-center gap-2 text-muted-foreground">
                     <PackageCheck className="h-8 w-8 opacity-40" />
-                    <span className="text-sm">没有符合条件的订单</span>
+                    <span className="text-sm">No matching orders</span>
                   </div>
                 </TableCell>
               </TableRow>
@@ -211,7 +219,7 @@ export default function Orders() {
                   </TableCell>
                   <TableCell className="text-sm">{order.cargo}</TableCell>
                   <TableCell className="text-right text-sm tabular-nums text-muted-foreground">
-                    {order.weightKg.toLocaleString('zh-CN')} kg
+                    {order.weightKg.toLocaleString('en-GB')} kg
                   </TableCell>
                   <TableCell className="text-right text-sm tabular-nums">
                     {formatCurrency(order.freight)}
@@ -227,11 +235,9 @@ export default function Orders() {
               ))}
           </TableBody>
         </Table>
-
-        {/* 分页 */}
         <div className="flex items-center justify-between border-t border-border px-4 py-3">
           <span className="text-xs text-muted-foreground">
-            共 {data?.total ?? 0} 条订单 · 第 {page} / {totalPages} 页
+            {data?.total ?? 0} orders · Page {page} of {totalPages}
           </span>
           <div className="flex items-center gap-2">
             <Button
@@ -241,7 +247,7 @@ export default function Orders() {
               onClick={() => setPage((p) => p - 1)}
             >
               <ChevronLeft className="mr-1 h-4 w-4" />
-              上一页
+              Previous
             </Button>
             <Button
               variant="secondary"
@@ -249,7 +255,7 @@ export default function Orders() {
               disabled={page >= totalPages || loading}
               onClick={() => setPage((p) => p + 1)}
             >
-              下一页
+              Next
               <ChevronRight className="ml-1 h-4 w-4" />
             </Button>
           </div>

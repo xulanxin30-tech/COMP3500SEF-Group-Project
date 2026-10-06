@@ -8,8 +8,8 @@ import Waybills from '@/pages/Waybills'
 import ComingSoon from '@/pages/ComingSoon'
 import { useIsAuthed } from '@/stores/auth'
 
-/** 路由守卫：未登录访问业务页面时重定向到登录页 */
 function RequireAuth() {
+  // Preserve the requested route when redirecting visitors to sign in.
   const isAuthed = useIsAuthed()
   const location = useLocation()
   if (!isAuthed) {
@@ -29,7 +29,6 @@ export default function App() {
             <Route path="/orders" element={<Orders />} />
             <Route path="/inventory" element={<Inventory />} />
             <Route path="/waybills" element={<Waybills />} />
-            {/* P1 阶段先占位，P2 迭代实现 */}
             <Route path="/dashboard" element={<ComingSoon />} />
             <Route path="/tracking" element={<ComingSoon />} />
             <Route path="/fleet" element={<ComingSoon />} />

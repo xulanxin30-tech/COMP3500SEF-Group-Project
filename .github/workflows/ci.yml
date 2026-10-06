@@ -7,6 +7,30 @@ on:
     branches: [main]
 
 jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install frontend dependencies
+        run: npm ci
+      - name: Check frontend lint
+        run: npm run lint -- --max-warnings=0
+      - name: Test HTTP and mock workflows
+        run: npm test
+      - name: Build frontend
+        run: npm run build
+
   build-and-test:
     runs-on: ubuntu-latest
     timeout-minutes: 10
