@@ -151,17 +151,18 @@ class TestBackendWrites(APIClient, unittest.TestCase):
             return connection.execute(query).fetchall()
 
     def test_write_routes_require_login(self):
+        # Requests intentionally carry no body: the HTTP/1.0 server answers
+        # 401 before reading the body, and a socket closed with unread body
+        # data can reset the connection on Windows before the response is read.
         routes = [
-            ("POST", "/api/shipments", CREATE_SHIPMENT),
-            ("POST", "/api/shipments/1/events", {
-                "hub_id": 1, "status": "shipped", "description": "Arrived at hub.",
-            }),
-            ("PATCH", "/api/shipments/1/status", {"status": "shipped"}),
+            ("POST", "/api/shipments"),
+            ("POST", "/api/shipments/1/events"),
+            ("PATCH", "/api/shipments/1/status"),
         ]
-        for method, path, data in routes:
+        for method, path in routes:
             for token in (None, "invalid-token"):
                 with self.subTest(path=path, token=token):
-                    status, _ = self.request(path, method, data, token)
+                    status, _ = self.request(path, method, token=token)
                     self.assertEqual(status, 401)
         self.assertEqual(self.database_rows("SELECT stock_quantity FROM items WHERE item_id = 1"),
                          [(120,)])
@@ -379,7 +380,10 @@ class TestBackendWrites(APIClient, unittest.TestCase):
                 ("Out for delivery from Central.",),
             ],
         )
-        self.assertEqual(self.request(path + "/status", "PATCH", {"status": "pending"}, token)[0], 401)
+        # Bodyless request: the server answers 401 before reading the body,
+        # and a socket closed with unread body data can reset the connection
+        # on Windows before the response is read.
+        self.assertEqual(self.request(path + "/status", "PATCH", token=token)[0], 401)
 
     def test_cors_preflight_and_public_health(self):
         request = Request(self.base_url + "/api/shipments", method="OPTIONS", headers={
