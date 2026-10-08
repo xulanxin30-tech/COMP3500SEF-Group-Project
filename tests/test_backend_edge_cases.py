@@ -165,11 +165,12 @@ class TestBodyValidation(EdgeCaseBase):
 
     def test_body_at_size_limit_is_accepted(self):
         token = self.login()
-        padding = MAX_BODY_BYTES - len(json.dumps(CREATE_SHIPMENT).encode("utf-8")) - 4
-        padded = {**CREATE_SHIPMENT, "delivery_address": "y" * padding}
+        padded = {**CREATE_SHIPMENT, "delivery_address": ""}
+        padding = MAX_BODY_BYTES - len(json.dumps(padded).encode("utf-8"))
         self.assertGreater(padding, 0)
+        padded["delivery_address"] = "y" * padding
         body_bytes = json.dumps(padded).encode("utf-8")
-        self.assertLessEqual(len(body_bytes), MAX_BODY_BYTES)
+        self.assertEqual(len(body_bytes), MAX_BODY_BYTES)
         status, shipment = self.raw_request(
             "POST", "/api/shipments", body=body_bytes,
             headers={"Content-Type": "application/json",
@@ -293,12 +294,14 @@ class TestPathParsing(EdgeCaseBase):
 
     def test_overlong_shipment_id_is_a_validation_error(self):
         token = self.login()
-        status, _ = self.raw_request(
+        status, body = self.raw_request(
             "POST", "/api/shipments/99999999999999999999/events",
             headers={"Content-Type": "application/json",
                      "Authorization": "Bearer " + token},
         )
         self.assertEqual(status, 400)
+        # A missing-body 400 must not hide a regression in path ID validation.
+        self.assertIn("shipment id", body["error"])
         self.assertEqual(self.database_rows("SELECT COUNT(*) FROM tracking_events"), [(2,)])
 
     def test_trailing_slash_does_not_match_status_route(self):
