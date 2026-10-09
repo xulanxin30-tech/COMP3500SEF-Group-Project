@@ -277,7 +277,8 @@ class TestFieldValidation(EdgeCaseBase):
 
     def test_login_response_has_exact_keys(self):
         _, body = self.request("/api/auth/login", "POST", LOGIN_BODY)
-        self.assertEqual(set(body), {"token", "token_type"})
+        self.assertEqual(set(body), {"token", "token_type", "user"})
+        self.assertEqual(body["user"], {"id": 4, "username": "demo", "role": "admin"})
 
 
 class TestPathParsing(EdgeCaseBase):

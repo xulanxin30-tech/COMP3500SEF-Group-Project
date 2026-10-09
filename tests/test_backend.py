@@ -12,7 +12,7 @@ from unittest.mock import patch
 from urllib.error import HTTPError
 from urllib.request import ProxyHandler, Request, build_opener
 
-from backend.server import create_server
+from backend.server import create_server, hash_password
 
 SEEDED_SHIPMENT = {
     "id": 1,
@@ -103,7 +103,18 @@ class TestBackendAPI(APIClient, unittest.TestCase):
     def test_shipments(self):
         status, body = self.request("/api/shipments")
         self.assertEqual(status, 200)
-        self.assertEqual(body, [SEEDED_SHIPMENT])
+        self.assertEqual(len(body), 1)
+        self.assertEqual({key: body[0][key] for key in SEEDED_SHIPMENT}, SEEDED_SHIPMENT)
+        self.assertEqual(body[0]["sender_id"], 2)
+        self.assertEqual(body[0]["receiver_phone"], "+852-98765432")
+        self.assertEqual(body[0]["delivery_address"],
+                         "Flat B, 12/F, Nathan Tower, Mong Kok, Kowloon")
+        self.assertEqual(body[0]["items"], [
+            {"item_id": 2, "sku": "TECH-KB-002", "item_name": "Mechanical Gaming Keyboard", "quantity": 1},
+            {"item_id": 3, "sku": "TECH-CB-003", "item_name": "USB-C Fast Charging Cable", "quantity": 2},
+        ])
+        self.assertIsInstance(body[0]["created_at"], str)
+        self.assertIsInstance(body[0]["updated_at"], str)
 
     def test_unknown_path(self):
         status, body = self.request("/missing")
@@ -172,6 +183,26 @@ class TestBackendWrites(APIClient, unittest.TestCase):
         token = self.login()
         status, _ = self.request("/api/shipments/1/status", "PATCH", {"status": "pending"}, token)
         self.assertEqual(status, 200)
+
+    def test_login_and_profile_use_sqlite_user(self):
+        token = self.login()
+        status, user = self.request("/api/auth/profile", token=token)
+        self.assertEqual(status, 200)
+        self.assertEqual(user, {"id": 4, "username": "demo", "role": "admin"})
+        self.assertEqual(self.request("/api/auth/profile")[0], 401)
+        self.assertNotIn("password_hash", user)
+        with closing(sqlite3.connect(self.database_path)) as connection, connection:
+            connection.execute("UPDATE users SET password_hash = ?, role = 'customer' WHERE username = 'demo'",
+                               (hash_password("changed-password"),))
+        self.assertEqual(self.request("/api/auth/login", "POST",
+                                     {"username": "demo", "password": "demo123"})[0], 401)
+        self.stop_server()
+        self.start_server()
+        status, login = self.request("/api/auth/login", "POST",
+                                     {"username": "demo", "password": "changed-password"})
+        self.assertEqual(status, 200)
+        self.assertEqual(login["user"], {"id": 4, "username": "demo", "role": "customer"})
+        self.assertEqual(self.database_rows("SELECT COUNT(*) FROM users WHERE username = 'demo'"), [(1,)])
 
     def test_login_rejects_invalid_credentials(self):
         status, body = self.request(
@@ -251,7 +282,7 @@ class TestBackendWrites(APIClient, unittest.TestCase):
                     "/api/shipments/1/status", "PATCH", {"status": value}, token
                 )
                 self.assertEqual(status, 200)
-                self.assertEqual(shipment, expected)
+                self.assertEqual({key: shipment[key] for key in expected}, expected)
                 self.assertEqual(self.request("/api/shipments")[1][0], shipment)
         self.assertEqual(self.database_rows("SELECT status FROM shipments WHERE shipment_id = 1"),
                          [("delivered",)])
@@ -367,10 +398,13 @@ class TestBackendWrites(APIClient, unittest.TestCase):
         self.stop_server()
         self.start_server()
         self.assertEqual(self.request("/api/items")[1][0]["stock_quantity"], 113)
-        self.assertEqual(self.request("/api/shipments")[1][-1], {**shipment, "status": "delivered"})
+        persisted = self.request("/api/shipments")[1][-1]
+        self.assertEqual({key: value for key, value in persisted.items() if key != "updated_at"},
+                         {key: value for key, value in {**shipment, "status": "delivered"}.items()
+                          if key != "updated_at"})
         self.assertEqual(
             self.database_rows("SELECT username FROM users ORDER BY user_id"),
-            [("admin_alan",), ("customer_alice",), ("courier_chan",)],
+            [("admin_alan",), ("customer_alice",), ("courier_chan",), ("demo",)],
         )
         self.assertEqual(
             self.database_rows("SELECT description FROM tracking_events WHERE shipment_id = 2 ORDER BY event_id"),

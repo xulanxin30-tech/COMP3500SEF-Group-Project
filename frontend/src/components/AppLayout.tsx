@@ -85,21 +85,21 @@ export default function AppLayout() {
           <div className="flex items-center gap-3">
             <span className="ui-label">YUNLIAN LOGISTICS</span>
             <span className="rounded-full border border-primary/40 bg-primary/10 px-2.5 py-0.5 text-[11px] font-medium text-primary">
-              {import.meta.env.VITE_USE_MOCK === 'true' ? 'MOCK' : 'LOCAL API'}
+              CONNECTED API
             </span>
           </div>
           <DropdownMenu>
             <DropdownMenuTrigger className="flex items-center gap-2.5 rounded-full outline-hidden transition-opacity hover:opacity-80">
               <Avatar className="h-8 w-8 border border-border">
                 <AvatarFallback className="bg-secondary text-xs font-semibold text-secondary-foreground">
-                  {user?.displayName?.slice(0, 1) ?? 'U'}
+                  {user?.username?.slice(0, 1) ?? 'U'}
                 </AvatarFallback>
               </Avatar>
-              <span className="text-sm text-foreground">{user?.displayName ?? 'Signed out'}</span>
+              <span className="text-sm text-foreground">{user?.username ?? 'Signed out'}</span>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-48">
               <DropdownMenuLabel>
-                <div className="text-sm">{user?.displayName}</div>
+                <div className="text-sm">{user?.username}</div>
                 <div className="text-xs font-normal text-muted-foreground">{user?.role}</div>
               </DropdownMenuLabel>
               <DropdownMenuSeparator />

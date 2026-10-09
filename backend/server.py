@@ -7,6 +7,8 @@ Run: python backend/server.py, then visit http://localhost:8000/api/health
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
+import hashlib
+import hmac
 import json
 import os
 import re
@@ -18,13 +20,32 @@ from urllib.parse import urlsplit
 DEFAULT_DATABASE = Path(__file__).resolve().with_name("lms.db")
 SCHEMA_PATH = Path(__file__).resolve().parent.parent / "database" / "schema.sql"
 
-# Temporary demo authentication; formal password hashing is still pending.
-# These public demonstration credentials are not production authentication.
+# Public local-development account, stored alongside all other SQLite users.
 DEMO_USERNAME = "demo"
 DEMO_PASSWORD = "demo123"
 MAX_BODY_BYTES = 65536
 MAX_SQLITE_ID = 2**63 - 1
 SHIPMENT_STATUSES = ("pending", "shipped", "delivered")
+PASSWORD_ITERATIONS = 600000
+
+
+def hash_password(password):
+    salt = secrets.token_hex(16)
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"),
+                                bytes.fromhex(salt), PASSWORD_ITERATIONS).hex()
+    return f"pbkdf2_sha256${PASSWORD_ITERATIONS}${salt}${digest}"
+
+
+def verify_password(password, encoded):
+    try:
+        algorithm, iterations, salt, expected = encoded.split("$")
+        if algorithm != "pbkdf2_sha256" or int(iterations) != PASSWORD_ITERATIONS:
+            return False
+        digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"),
+                                    bytes.fromhex(salt), int(iterations)).hex()
+        return hmac.compare_digest(digest, expected)
+    except (ValueError, TypeError, AttributeError):
+        return False
 
 
 class APIError(Exception):
@@ -55,11 +76,21 @@ def initialize_database(database_path):
         }
         if "shipments" not in tables:
             connection.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
+        # Add the account to existing v1.1 databases without resetting any data
+        # or replacing an existing user's password.
+        if connection.execute("SELECT 1 FROM users WHERE username = ?",
+                              (DEMO_USERNAME,)).fetchone() is None:
+            connection.execute(
+                "INSERT INTO users (username, password_hash, role, phone) VALUES (?, ?, ?, ?)",
+                (DEMO_USERNAME, hash_password(DEMO_PASSWORD), "admin", "+852-90000000"),
+            )
 
 
 SHIPMENT_SELECT = """
     SELECT shipments.shipment_id AS id, shipments.tracking_number,
-           users.username AS sender, shipments.receiver_name, shipments.status
+           shipments.sender_id, users.username AS sender, shipments.receiver_name,
+           shipments.receiver_phone, shipments.delivery_address, shipments.status,
+           shipments.created_at, shipments.updated_at
     FROM shipments LEFT JOIN users ON users.user_id = shipments.sender_id
 """
 
@@ -70,7 +101,22 @@ def get_shipment(connection, shipment_id):
     ).fetchone()
     if row is None:
         raise APIError(404, "shipment not found")
-    return dict(row)
+    return shipment_payload(connection, row)
+
+
+def shipment_payload(connection, row):
+    payload = dict(row)
+    payload["items"] = [dict(item) for item in connection.execute(
+        """SELECT items.item_id AS item_id, items.sku, items.item_name, shipment_items.quantity
+           FROM shipment_items JOIN items ON items.item_id = shipment_items.item_id
+           WHERE shipment_items.shipment_id = ? ORDER BY shipment_items.shipment_item_id""",
+        (payload["id"],),
+    )]
+    return payload
+
+
+def user_payload(row):
+    return {"id": row["user_id"], "username": row["username"], "role": row["role"]}
 
 
 def item_payload(row):
@@ -167,17 +213,26 @@ class Handler(BaseHTTPRequestHandler):
         scheme, _, token = self.headers.get("Authorization", "").partition(" ")
         if scheme.lower() != "bearer" or token not in self.server.tokens:
             raise APIError(401, "valid bearer token is required")
+        with database_connection(self.server.database_path) as connection:
+            user = connection.execute("SELECT * FROM users WHERE user_id = ?",
+                                      (self.server.tokens[token],)).fetchone()
+        if user is None:
+            raise APIError(401, "session user no longer exists")
+        return user_payload(user)
 
     def _login(self):
         data = self._read_json(("username", "password"))
         if any(not isinstance(data[field], str) or not data[field]
                for field in ("username", "password")):
             raise APIError(400, "username and password must be non-empty strings")
-        if data["username"] != DEMO_USERNAME or data["password"] != DEMO_PASSWORD:
+        with database_connection(self.server.database_path) as connection:
+            user = connection.execute("SELECT * FROM users WHERE username = ?",
+                                      (data["username"],)).fetchone()
+        if user is None or not verify_password(data["password"], user["password_hash"]):
             raise APIError(401, "invalid credentials")
         token = secrets.token_urlsafe(32)
-        self.server.tokens.add(token)
-        self._send({"token": token, "token_type": "Bearer"})
+        self.server.tokens[token] = user["user_id"]
+        self._send({"token": token, "token_type": "Bearer", "user": user_payload(user)})
 
     def _handle(self, action):
         try:
@@ -194,11 +249,13 @@ class Handler(BaseHTTPRequestHandler):
         path = urlsplit(self.path).path
         if path == "/api/health":
             self._send({"status": "ok", "service": "lms-backend"})
+        elif path == "/api/auth/profile":
+            self._send(self._require_auth())
         elif path in ("/api/shipments", "/api/items"):
             with database_connection(self.server.database_path) as connection:
                 if path == "/api/shipments":
                     query = SHIPMENT_SELECT + " ORDER BY shipments.shipment_id"
-                    rows = [dict(row) for row in connection.execute(query)]
+                    rows = [shipment_payload(connection, row) for row in connection.execute(query)]
                 else:
                     query = """
                         SELECT item_id AS id, item_name, sku, stock_quantity, unit_price
@@ -343,7 +400,7 @@ def create_server(port=8000, database_path=None):
                 else os.environ.get("LMS_DB_PATH", DEFAULT_DATABASE))
     initialize_database(path)
     server = HTTPServer((os.environ.get("LMS_HOST", "localhost"), port), Handler)
-    server.tokens = set()
+    server.tokens = {}
     server.database_path = path
     return server
 

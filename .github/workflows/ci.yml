@@ -24,9 +24,13 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - name: Install frontend dependencies
         run: npm ci
+      - name: Set up Python for shared-backend workflows
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
       - name: Check frontend lint
         run: npm run lint -- --max-warnings=0
-      - name: Test HTTP and mock workflows
+      - name: Test frontend against Python and SQLite
         run: npm test
       - name: Build frontend
         run: npm run build

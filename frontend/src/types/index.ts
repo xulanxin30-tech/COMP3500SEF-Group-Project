@@ -1,46 +1,7 @@
-/** Frontend contracts for the local demo API and browser mock. */
-export type OrderStatus =
-  | 'PENDING'
-  | 'IN_TRANSIT'
-  | 'DELIVERING'
-  | 'SIGNED'
-  | 'EXCEPTION'
-
-export interface Order {
-  id: string
-
-  /** Human-readable order reference, e.g. YD202610061001. */
-  orderNo: string
-
-  customer: string
-
-  origin: string
-
-  destination: string
-
-  cargo: string
-
-  pieces: number
-
-  weightKg: number
-
-  /** Freight charge in CNY. */
-  freight: number
-  status: OrderStatus
-
-  driver: string
-
-  /** ISO timestamp. */
-  createdAt: string
-
-  /** ISO timestamp of the most recent change. */
-  updatedAt: string
-}
-
+/** JSON contracts served by backend/server.py, backed by schema v1.1. */
 export interface User {
-  id: string
+  id: number
   username: string
-  displayName: string
   role: string
 }
 
@@ -51,101 +12,46 @@ export interface LoginPayload {
 
 export interface LoginResult {
   token: string
+  token_type: 'Bearer'
   user: User
 }
 
-export interface OrderQuery {
-  page: number
-  pageSize: number
-  status?: OrderStatus | 'ALL'
-  keyword?: string
-}
-
-export interface PageResult<T> {
-  list: T[]
-  total: number
-  page: number
-  pageSize: number
-}
-
-export interface OrderStats {
-  todayCount: number
-  inTransit: number
-  exception: number
-  signedRate: number
-}
-
-export interface CreateOrderPayload {
-  customer: string
-  origin: string
-  destination: string
-  cargo: string
-  pieces: number
-  weightKg: number
-  freight: number
-  driver?: string
-}
-
 export interface InventoryItem {
-  id: string
-  sku: string
-  name: string
-  category: string
-
-  warehouse: string
-  quantity: number
-  unit: string
-
-  /** Show a restock alert when quantity falls below this value. */
-  safetyStock: number
-  updatedAt: string
+  id: number
+  sku: string | null
+  item_name: string
+  stock_quantity: number
+  unit_price: number
 }
 
-export type WaybillStatus =
-  | 'PENDING'
-  | 'IN_TRANSIT'
-  | 'DELIVERING'
-  | 'SIGNED'
-  | 'EXCEPTION'
-  | 'CANCELLED'
+export type ShipmentStatus = 'pending' | 'shipped' | 'delivered'
 
-export interface Waybill {
-  id: string
-  waybillNo: string
-
-  orderNo: string
-
-  /** SKU whose stock was deducted when the waybill was created. */
-  sku: string
-  cargoName: string
+export interface ShipmentItem {
+  item_id: number
+  sku: string | null
+  item_name: string
   quantity: number
-  unit: string
-  warehouse: string
-  senderName: string
-  senderPhone: string
-  senderAddress: string
-  receiverName: string
-  receiverPhone: string
-  receiverAddress: string
-  status: WaybillStatus
-  createdAt: string
-  updatedAt: string
 }
 
-export interface CreateWaybillPayload {
-  sku: string
-  quantity: number
-  orderNo?: string
-  senderName: string
-  senderPhone?: string
-  senderAddress?: string
-  receiverName: string
-  receiverPhone?: string
-  receiverAddress?: string
+export interface Shipment {
+  id: number
+  tracking_number: string
+  sender_id: number
+  sender: string | null
+  receiver_name: string
+  receiver_phone: string
+  delivery_address: string
+  status: ShipmentStatus
+  created_at: string
+  updated_at: string
+  items: ShipmentItem[]
 }
 
-export interface ApiResponse<T> {
-  code: number
-  message: string
-  data: T
+export interface CreateShipmentPayload {
+  sender_id: number
+  receiver_name: string
+  receiver_phone: string
+  delivery_address: string
+  sku: string
+  quantity: number
 }

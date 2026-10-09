@@ -15,8 +15,8 @@ permission to edit a folder. Update this table when the team agrees a change.
 | --- | --- | --- |
 | XU Lanxin | Team lead / project management | Scope, coordination, course-requirement verification and overall delivery; project records |
 | Wong Ching Fung | UI/UX design | User needs, wireframes, screen design and usability review; frontend and design discussions |
-| Chi Xuanyi | Frontend development | Page implementation and planned API integration; `frontend/` |
-| XIE Jiayan | Backend development | API implementation, business logic and planned authentication; `backend/` |
+| Chi Xuanyi | Frontend development | Pages and shared Python/SQLite API integration; `frontend/` |
+| XIE Jiayan | Backend development | API implementation, business logic and SQLite authentication; `backend/` |
 | CEN Yin Chi | Database | Data modelling, schema and planned migrations; `database/` |
 | ZHANGZHIYUAN | Testing / QA | Test planning, cases and quality evidence; `tests/` |
 | Aw Chun Yin | Documentation / DevOps | Documentation and repository support, including CI and Docker packaging; deployment planned |
@@ -129,3 +129,22 @@ an official Logbook or submission format.
 - Status: Prepared for PR review; completion requires review and merge.
 - Evidence: The PR linking this entry records the two fix commits, local checks
   and GitHub Actions result.
+
+### TASK-python-sqlite-integration: Connect React workflows to the persistent backend
+
+- Owner: XIE Jiayan / GeorgeXie2333
+- Contributors / affected module owners: Frontend (Chi Xuanyi), backend
+  (XIE Jiayan), database (CEN Yin Chi), QA (ZHANGZHIYUAN), DevOps (Aw Chun Yin)
+- Expected result: Login, inventory, waybill creation and status updates all use
+  the Python API and one SQLite database; orders and waybills show the same shipments.
+- Acceptance checks: SQLite-backed login returns the sender user id; waybill
+  creation deducts stock atomically; status updates persist without deducting
+  stock again; data survives restart; frontend calls the documented API routes.
+- Due date: Not yet agreed
+- Next progress update: PR submission and CI result
+- Status: In review; completion requires review and merge.
+- Evidence: 56 Python tests, 5 frontend API integration tests, lint and production
+  build passed locally. A real browser created a 5-item waybill, reduced stock
+  from 120 to 115 and changed the same shipment to delivered; direct SQLite checks
+  confirmed the sender, status and tracking events. The PR linking this entry
+  contains the complete validation commands and CI results.

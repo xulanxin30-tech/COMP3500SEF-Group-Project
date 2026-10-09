@@ -9,22 +9,24 @@ and testing evidence.
 
 ## Current status
 
-The repository includes a frontend workflow demo and a separate persistent
-backend. Integration between these components and the complete logistics
-workflow remain unfinished.
+The React frontend and Python backend share SQLite persistence for login,
+inventory, shipment creation and status updates. Remaining logistics modules
+are still planned.
 
 | Component | Available now | Work still planned |
 | --- | --- | --- |
-| Frontend | React/TypeScript screens for sign in, orders, inventory and waybills, connected to a local Node demo API | Integration with the shared Python/SQLite API and remaining modules |
-| Backend | Python standard-library HTTP server with SQLite persistence for schema v1.1 | Formal user authentication and remaining workflow screens |
+| Frontend | React/TypeScript screens for sign in, orders, inventory and waybills, connected to Python/SQLite | Remaining logistics modules |
+| Backend | Python standard-library HTTP server with SQLite users, password hashing and schema v1.1 persistence | Production session management and role permissions |
 | Database | SQLite schema v1.1 (`users`, `hubs`, `items`, `shipments`, `shipment_items`, `tracking_events`) plus Hong Kong seed data | Database selection beyond SQLite and a migration approach |
-| Tests | Python HTTP API tests and freight examples; Node and browser-mock workflow regression tests | Automated browser and complete shared-backend workflow tests |
+| Tests | Python HTTP API tests and freight examples; frontend API workflow tests against Python/SQLite | Automated browser regression tests |
 | Delivery | Source files, team documentation, Dockerfile and GitHub Actions build/test workflow | Deployment and release automation |
 
 The backend loads `database/schema.sql` into SQLite on first start.
-The frontend uses its own in-memory Node demo API under `frontend/server/`.
-It checks demo credentials and supports waybill stock deduction and cancellation.
-It is not yet connected to the Python/SQLite API; their contracts differ.
+The frontend calls the same API under `/api`. Orders and waybills show the same
+`shipments` records. Creating a waybill deducts stock in one SQLite transaction;
+status options match schema v1.1: `pending`, `shipped`, `delivered`.
+The backend adds a `demo` user with a salted PBKDF2 password hash on first start
+if that account is missing, including for existing v1.1 databases.
 
 ## Documentation
 
@@ -54,7 +56,6 @@ It is not yet connected to the Python/SQLite API; their contracts differ.
 │   └── PROJECT.md
 ├── frontend/
 │   ├── src/
-│   ├── server/
 │   ├── tests/
 │   └── package.json
 ├── backend/
@@ -86,11 +87,10 @@ starts successfully before continuing:
 
 ### Frontend
 
-Use Node.js 22.12 or later. Run `cd frontend`, then `npm ci` and
-`npm run server`. In a second terminal under `frontend`, run `npm run dev`.
+Start the Python backend as described below. Use Node.js 22.12 or later,
+then run `cd frontend`, `npm ci` and `npm run dev` in a second terminal.
 Open http://localhost:3000 and sign in with `demo` / `demo123`.
-See the [frontend guide](frontend/README.md) for API configuration, browser-only
-mock mode, validation commands and the limits of the in-memory demo.
+See the [frontend guide](frontend/README.md) for API configuration and validation.
 Opening `index.html` directly does not start the React application.
 
 ### Backend
@@ -123,8 +123,12 @@ documented in [docs/openapi.yaml](docs/openapi.yaml). Stop the server with
 before retrying. An existing `backend/lms.db` built on the old four-table
 schema should be deleted so the v1.1 schema can be created.
 
-The server listens on `localhost` by default. Set the `LMS_HOST` environment
-variable to choose another listen address.
+The server listens on `localhost` by default. Set `LMS_HOST` to choose another
+listen address and `LMS_DB_PATH` to choose the SQLite file (default:
+`backend/lms.db`). The demo account is `demo` / `demo123`; login reads `users`
+and returns its id, username and role. Existing placeholder seed hashes for
+other users are not login credentials. Tokens expire when the backend restarts,
+while users, stock, shipments and tracking events remain in SQLite.
 
 ### Backend in Docker
 
@@ -163,7 +167,8 @@ coverage of the frontend or a production freight calculation.
 
 For frontend validation, run `npm test`, `npm run lint -- --max-warnings=0`
 and `npm run build` from `frontend`. The workflow suite checks the local HTTP
-API and browser mock; the [frontend guide](frontend/README.md) describes its scope.
+React API layer against a real temporary Python/SQLite server; the
+[frontend guide](frontend/README.md) describes its scope and Python configuration.
 
 GitHub Actions runs the Python suite for pushes and PRs targeting `main`, builds the
 Docker image, starts the backend container and checks the health response through

@@ -18,7 +18,7 @@ export const useAuthStore = create<AuthState>()(
       setAuth: (token, user) => set({ token, user }),
       logout: () => set({ token: null, user: null }),
     }),
-    { name: 'lms-auth' },
+    { name: 'lms-auth', version: 1, migrate: () => ({ token: null, user: null }) },
   ),
 )
 
