@@ -1,67 +1,78 @@
 # Yunlian Logistics frontend
 
-React 19, TypeScript, Vite and Tailwind CSS provide the order, inventory and
-waybill screens. A separate Node HTTP API supports the local workflow demo.
+React 19, TypeScript, Vite and Tailwind CSS provide the login, inventory,
+order and waybill screens. Every workflow calls `backend/server.py` and uses
+the same SQLite database.
 
 ## Run locally
 
-Use Node.js 22.12 or later. From the repository root:
+Use Python 3 and Node.js 22.12 or later. Start the backend from the repository
+root (Windows PowerShell):
+
+```powershell
+py -3 backend/server.py
+```
+
+On macOS/Linux use `python3 backend/server.py`. If Python has another executable
+path, use that instead. In a second terminal:
 
 ```sh
 cd frontend
 npm ci
-npm run server
-```
-
-Keep that terminal open and start the frontend in a second terminal:
-
-```sh
-cd frontend
 npm run dev
 ```
 
 Open http://localhost:3000 and sign in with `demo` / `demo123`.
-No `.env` file is required: Vite proxies `/api` to the local API on port 8080.
-`npm run preview` also proxies API requests when checking a production build.
-If the API uses a different `PORT`, set `VITE_API_BASE_URL` in a local `.env`
-file to its full API address, for example `http://127.0.0.1:8081/api/v1`.
-Restart Vite after changing environment variables.
+Vite dev and preview proxy `/api` to the Python backend on port 8000.
+No environment file is required. For another backend address, set
+`VITE_API_BASE_URL=http://127.0.0.1:8000/api` in `frontend/.env` and restart Vite.
+A deployed build needs a reverse proxy for `/api` or an explicit API base URL.
 
-The demo supports sign in → inventory → create waybill (deduct stock) → change
-status → cancel (restore stock). Repeated cancellation does not restore stock
-twice. Reactivation checks available stock before deducting it again.
+The backend defaults to `backend/lms.db`; set `LMS_DB_PATH` before starting it
+to select another database. Startup adds the missing demo account with a salted
+PBKDF2-SHA256 hash to `users`, including in existing v1.1 databases. It preserves
+existing stock, shipments and account passwords. The other seed accounts have
+placeholder password hashes and cannot sign in until real hashes are assigned.
 
-The Node service binds to `127.0.0.1` and stores all data and sessions in memory.
-Restarting it resets orders, waybills and stock, and invalidates issued tokens.
-Sessions expire after eight hours. This service is separate from
-`backend/server.py`: the Python/SQLite API uses different routes and data
-contracts. Pointing this frontend directly at the Python API does not integrate
-the two implementations. Python integration and durable demo data remain future
-work.
+## Shared workflow
 
-To run without a server, copy `.env.example` to `.env`, set `VITE_USE_MOCK=true`
-and restart Vite. Browser mock data resets on refresh. The header identifies
-whether the app is using `MOCK` or `LOCAL API` mode.
+Sign in → check inventory → create a waybill → update status.
+The waybill form uses the signed-in SQLite user as sender and requires a SKU,
+positive integer quantity, receiver name, phone and delivery address.
+The backend atomically deducts stock and writes the shipment, shipment item
+and initial tracking event. Insufficient stock returns the backend's error
+without creating a partial shipment.
+
+Orders and waybills are views of the same `shipments` records, with local search,
+status filtering and pagination. Lists include all items on each shipment.
+Status options are `pending`, `shipped` and `delivered`, matching schema v1.1.
+Changing status appends a tracking event; it does not change inventory.
+The schema has no cancellation status or separate order table.
+
+Users, stock, shipments and events persist across backend restarts.
+Bearer tokens are process-local; after a restart, an authenticated request
+returns 401 and the frontend clears the session and redirects to sign in.
+Incorrect login credentials stay on the login page and show the backend error.
+Sessions issued by the former Node demo are discarded by the new auth-store
+version. The Node demo and browser mock have been removed.
 
 ## API contract
 
 | Method | Path | Behavior |
 | --- | --- | --- |
-| POST | `/api/v1/auth/login` | Issue a demo session token |
-| GET | `/api/v1/auth/profile` | Current demo user |
-| GET | `/api/v1/inventory` | Stock and safety-stock levels |
-| GET | `/api/v1/waybills` | List waybills |
-| POST | `/api/v1/waybills` | Validate a positive integer quantity and deduct stock |
-| PUT | `/api/v1/waybills/:id/status` | Update status, restoring stock on cancellation |
-| GET | `/api/v1/orders` | Search, filter and paginate orders |
-| GET | `/api/v1/orders/stats` | Actual order counts and delivery rate; today uses UTC |
-| POST | `/api/v1/orders` | Create an order |
-| PUT | `/api/v1/orders/:id/status` | Update a validated order status |
+| POST | `/api/auth/login` | Verify a SQLite password hash; return token and public user |
+| GET | `/api/auth/profile` | Current SQLite user; requires a bearer token |
+| GET | `/api/items` | Catalogue, actual stock and unit prices in HKD |
+| GET | `/api/shipments` | Persisted shipments with receiver details, timestamps and items |
+| POST | `/api/shipments` | Create a pending waybill and deduct stock atomically |
+| PATCH | `/api/shipments/:id/status` | Update status and append a tracking event |
 
-Responses use `{ code, message, data }`. A nonzero `code` is an error, including
-`2003` for insufficient stock. Every endpoint except login requires an issued
-`Authorization: Bearer <token>`. Invalid authentication returns HTTP 401;
-malformed JSON returns 400 and oversized bodies return 413.
+Success responses are raw JSON objects/arrays. Errors use `{ error }`
+and HTTP status codes, including 409 for insufficient stock. Shipment writes
+require `Authorization: Bearer <token>`. Items, shipments and health are public
+reads, as documented in [OpenAPI](../docs/openapi.yaml). SQLite timestamps are UTC;
+the frontend displays them in the browser's local timezone. Inventory shows only
+fields stored in schema v1.1 (no invented warehouse or safety-stock values).
 
 ## Validation
 
@@ -69,26 +80,32 @@ malformed JSON returns 400 and oversized bodies return 413.
 npm test
 npm run lint -- --max-warnings=0
 npm run build
-npm audit
 ```
 
-The workflow suite exercises stock deduction, cancellation, reactivation,
-validation, unique references, search and statistics against both the HTTP API
-and browser mock. HTTP checks also cover forged tokens and malformed requests.
-GitHub Actions runs the frontend checks separately from the Python backend.
+`npm test` type-checks the frontend and runs its actual API/request modules against
+a temporary Python server and SQLite file. It checks login/profile, multi-item
+shipments, creation and stock deduction, PATCH status, persistence across restart,
+expired sessions, invalid inputs and competing stock requests. No manually
+started server is needed; tests start and stop their own server.
 
-Tailwind 4 replaces the vulnerable Tailwind 3 build dependency chain while
-retaining the configured theme. Browser requirements and migration details are
-in the [official upgrade guide](https://tailwindcss.com/docs/upgrade-guide).
+Tests use `python3` on macOS/Linux and `python` on Windows by default.
+Set `PYTHON` to the Python executable if needed. For example, in PowerShell:
+
+```powershell
+$env:PYTHON = 'C:\path\to\python.exe'
+npm test
+```
+
+GitHub Actions installs Python for the frontend job and runs these same checks.
+Run the standalone Python regression suite from the repository root with
+`py -3 -m unittest discover -s tests -v` (or `python3` on macOS/Linux).
 
 ## Source layout
 
 ```text
-server/server.js   In-memory Node demo API
-src/api           Typed API calls
-src/lib/request.ts HTTP/mock selection and token injection
-src/mock          Browser demo data and workflow handlers
-src/pages         Login, orders, inventory and waybill screens
-src/types         Shared frontend data contracts
-tests             HTTP and mock workflow regression tests
+src/api            Typed Python API calls
+src/lib/request.ts JSON HTTP requests, token injection and backend errors
+src/pages          Login, inventory and shared shipment views
+src/types          Python/SQLite JSON contracts
+tests              Frontend API workflow tests using the real backend
 ```

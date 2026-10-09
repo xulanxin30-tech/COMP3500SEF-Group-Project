@@ -1,12 +1,13 @@
 openapi: 3.0.3
 info:
   title: Logistics Management System Backend API
-  version: 0.2.0
+  version: 0.3.0
   description: |
     Backend contract owned by XIE Jiayan. Persists against schema v1.1
     (`users`, `hubs`, `items`, `shipments`, `shipment_items`, `tracking_events`).
-    Demo authentication uses demo/demo123 and process-local tokens; tokens expire
-    when the server restarts. Formal password hashing is still pending.
+    Authentication reads SQLite users with salted PBKDF2-SHA256 password hashes.
+    Startup adds demo/demo123 if that account is missing, without replacing an
+    existing password. Tokens are process-local and expire on server restart.
     Creating a shipment deducts `items.stock_quantity` and writes one
     `shipment_items` row plus a pending tracking event. Status updates also
     append a tracking event. Event posts are append-only and do not change
@@ -36,8 +37,8 @@ paths:
   /api/auth/login:
     post:
       operationId: login
-      summary: Obtain a demo bearer token
-      description: Temporary in-memory authentication. Seeded users are not used for login yet.
+      summary: Authenticate a SQLite user and obtain a bearer token
+      description: Validates the users.password_hash and returns the user's identity. Placeholder seed hashes cannot be used for login.
       requestBody:
         required: true
         content:
@@ -62,13 +63,15 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [token, token_type]
+                required: [token, token_type, user]
                 properties:
                   token:
                     type: string
                   token_type:
                     type: string
                     enum: [Bearer]
+                  user:
+                    $ref: '#/components/schemas/User'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -77,11 +80,26 @@ paths:
           $ref: '#/components/responses/TooLarge'
         '415':
           $ref: '#/components/responses/UnsupportedMediaType'
+  /api/auth/profile:
+    get:
+      operationId: getProfile
+      summary: Get the current SQLite user for a bearer token
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Current user's public identity
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
   /api/shipments:
     get:
       operationId: listShipments
       summary: List persisted shipments in id order
-      description: Sender usernames come from a LEFT JOIN to users.
+      description: Includes sender usernames, receiver details, UTC SQLite timestamps and all shipment_items joined to the item catalogue. Orders and waybills in the frontend use this same list.
       responses:
         '200':
           description: Shipments, including the schema seed row
@@ -91,8 +109,6 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/Shipment'
-              example:
-                - {id: 1, tracking_number: HK202610001, sender: customer_alice, receiver_name: David Cheung, status: shipped}
     post:
       operationId: createShipment
       summary: Create a pending shipment and atomically deduct item stock
@@ -286,6 +302,18 @@ components:
         maximum: 9223372036854775807
       description: Existing shipments.shipment_id
   schemas:
+    User:
+      type: object
+      required: [id, username, role]
+      properties:
+        id:
+          type: integer
+          description: users.user_id; used as sender_id when creating a waybill
+        username:
+          type: string
+        role:
+          type: string
+          enum: [customer, courier, warehouse_admin, admin]
     Error:
       type: object
       required: [error]
@@ -294,7 +322,7 @@ components:
           type: string
     Shipment:
       type: object
-      required: [id, tracking_number, sender, receiver_name, status]
+      required: [id, tracking_number, sender_id, sender, receiver_name, receiver_phone, delivery_address, status, created_at, updated_at, items]
       properties:
         id:
           type: integer
@@ -306,12 +334,41 @@ components:
           type: string
           nullable: true
           description: users.username for sender_id
+        sender_id:
+          type: integer
+        receiver_phone:
+          type: string
+        delivery_address:
+          type: string
+        created_at:
+          type: string
+          description: UTC SQLite timestamp, YYYY-MM-DD HH:mm:ss
+        updated_at:
+          type: string
+          description: UTC SQLite timestamp, YYYY-MM-DD HH:mm:ss
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ShipmentItem'
         receiver_name:
           type: string
           description: shipments.receiver_name
         status:
           type: string
           enum: [pending, shipped, delivered]
+    ShipmentItem:
+      type: object
+      required: [item_id, sku, item_name, quantity]
+      properties:
+        item_id:
+          type: integer
+        sku:
+          type: string
+          nullable: true
+        item_name:
+          type: string
+        quantity:
+          type: integer
     Item:
       type: object
       required: [id, item_name, sku, stock_quantity, unit_price]

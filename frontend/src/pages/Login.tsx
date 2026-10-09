@@ -27,7 +27,7 @@ export default function Login() {
     try {
       const { token, user } = await authApi.login({ username: username.trim(), password })
       setAuth(token, user)
-      toast.success(`Welcome back, ${user.displayName}`)
+      toast.success(`Welcome back, ${user.username}`)
       const from = (location.state as { from?: string } | null)?.from
       navigate(from ?? '/orders', { replace: true })
     } catch (err) {
