@@ -5,7 +5,7 @@ owners (see `docs/PROJECT.md`).
 
 | File | What it is |
 | :--- | :--- |
-| `schema.sql` | The schema (v1.2) **and** the seed data. `backend/server.py` runs it only when the database has no tables yet. |
+| `schema.sql` | The schema (v1.2) **and** the seed data. `backend/server.py` runs it only for an unversioned database with no user-defined schema objects. |
 | `db_manager.py` | Migration / backup / clean-rebuild / verify tool. Standard library only, no dependencies. |
 | `backups/` | Output of `db_manager.py backup`. Do not commit it (`*.db` and the SQL dumps contain data). |
 
@@ -54,6 +54,18 @@ writing during backup. SQL dumps include the schema version and can be restored 
 empty database with `sqlite3.Connection.executescript`. Repeated backups receive distinct
 names; `--keep N` retains the last N pairs (`0` disables pruning). Both the backend and
 this tool create v1.2 databases with `PRAGMA user_version = 2`.
+
+Backend startup checks that existing databases contain all six application tables
+and a supported schema version before adding the demo account. Missing tables,
+view-only databases and unsupported versions cause startup to stop without
+reseeding or changing existing data. Complete v1.1 and v1.2 databases remain
+supported; startup does not migrate them. Bootstrap also refuses to drop existing
+objects if another initializer populates the database after the empty check.
+
+If startup rejects a database, stop other backend processes, back it up, and run
+`verify` to inspect it. Repair an incomplete database or restore a known-good
+backup before retrying. Use `migrate` only for a supported complete database;
+`rebuild` remains an explicit, destructive choice for disposable data.
 
 ## What v1.2 changed
 

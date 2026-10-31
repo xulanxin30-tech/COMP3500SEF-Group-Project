@@ -19,6 +19,8 @@ from urllib.parse import urlsplit
 
 DEFAULT_DATABASE = Path(__file__).resolve().with_name("lms.db")
 SCHEMA_PATH = Path(__file__).resolve().parent.parent / "database" / "schema.sql"
+REQUIRED_TABLES = {"users", "hubs", "items", "shipments", "shipment_items", "tracking_events"}
+SUPPORTED_SCHEMA_VERSIONS = (0, 1, 2)  # Original v1.1 databases were unversioned.
 
 # Public local-development account, stored alongside all other SQLite users.
 DEMO_USERNAME = "demo"
@@ -68,14 +70,38 @@ def database_connection(database_path):
 
 
 def initialize_database(database_path):
-    """Create schema and seed data once when the shipments table is missing."""
+    """Bootstrap only empty databases; reject incomplete schemas without writes."""
     with database_connection(database_path) as connection:
-        tables = {
-            row[0]
-            for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
-        }
-        if "shipments" not in tables:
-            connection.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
+        version = connection.execute("PRAGMA user_version").fetchone()[0]
+        if version not in SUPPORTED_SCHEMA_VERSIONS:
+            raise ValueError(f"unsupported database schema version {version}; "
+                             "back up the database and use a compatible backend")
+        objects = connection.execute(
+            "SELECT type, name FROM sqlite_master WHERE name NOT GLOB 'sqlite_*'"
+        ).fetchall()
+        if not objects and version == 0:
+            # executescript commits any pending transaction before running the
+            # script. Refuse actual DROP operations so a concurrent initializer
+            # cannot populate the database after this check and then lose data.
+            def protect_existing_schema(action, _name, _table, _database, _source):
+                if action in (sqlite3.SQLITE_DROP_TABLE, sqlite3.SQLITE_DROP_VIEW,
+                              sqlite3.SQLITE_DROP_INDEX, sqlite3.SQLITE_DROP_TRIGGER):
+                    return sqlite3.SQLITE_DENY
+                return sqlite3.SQLITE_OK
+
+            connection.set_authorizer(protect_existing_schema)
+            try:
+                connection.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
+            finally:
+                connection.set_authorizer(None)
+        else:
+            tables = {row["name"] for row in objects if row["type"] == "table"}
+            missing = REQUIRED_TABLES - tables
+            if missing:
+                raise ValueError("unsupported or incomplete database; missing tables: "
+                                 + ", ".join(sorted(missing))
+                                 + ". Back up the database and inspect it with "
+                                 "database/db_manager.py verify; startup will not rebuild it.")
         # Add the account to existing v1.1 databases without resetting any data
         # or replacing an existing user's password.
         if connection.execute("SELECT 1 FROM users WHERE username = ?",

@@ -172,6 +172,104 @@ class TestSchema(DatabaseTestCase):
         self.assertEqual(dbm.verify(self.db), 0)
 
 
+class TestBackendInitialization(DatabaseTestCase):
+    def assert_startup_preserves_rejected_database(self, message):
+        from backend.server import create_server
+        before = self.snapshot()
+        with patch("backend.server.HTTPServer") as listener:
+            with self.assertRaisesRegex(ValueError, message):
+                create_server(port=0, database_path=self.db)
+            listener.assert_not_called()
+        self.assertEqual(self.snapshot(), before)
+
+    def test_users_only_database_is_not_reseeded(self):
+        self.execute("CREATE TABLE users (user_id INTEGER PRIMARY KEY, username TEXT, "
+                     "password_hash TEXT, role TEXT, phone TEXT)")
+        self.execute("INSERT INTO users VALUES (99, 'existing_customer', "
+                     "'original-password-hash', 'customer', '+852-90000001')")
+        self.assert_startup_preserves_rejected_database("missing tables")
+
+    def test_each_missing_required_table_is_rejected_without_changes(self):
+        for table in ("users", "hubs", "items", "shipments", "shipment_items", "tracking_events"):
+            with self.subTest(missing=table):
+                self.db = self.tmp / f"missing-{table}.db"
+                self.make_v11_db()
+                self.execute(f"DROP TABLE {table}")
+                self.assert_startup_preserves_rejected_database("missing tables: " + table)
+
+    def test_unrelated_database_is_not_initialized(self):
+        self.execute("CREATE TABLE notes (content TEXT)")
+        self.execute("INSERT INTO notes VALUES ('keep this database untouched')")
+        self.assert_startup_preserves_rejected_database("missing tables")
+
+    def test_view_only_database_is_not_replaced(self):
+        self.execute("CREATE VIEW v_shipment_order_summary AS SELECT 'keep me' AS note")
+        self.assert_startup_preserves_rejected_database("missing tables")
+
+    def test_versioned_empty_database_is_not_initialized(self):
+        for version in (1, 2, 999):
+            with self.subTest(version=version):
+                self.db = self.tmp / f"empty-version-{version}.db"
+                self.execute(f"PRAGMA user_version = {version}")
+                self.assert_startup_preserves_rejected_database("schema version|missing tables")
+
+    def test_newer_populated_database_is_not_modified(self):
+        self.make_v11_db()
+        self.execute("PRAGMA user_version = 999")
+        self.assert_startup_preserves_rejected_database("schema version")
+
+    def test_stale_empty_check_cannot_overwrite_another_initializers_data(self):
+        from backend.server import create_server, SCHEMA_PATH
+        schema = SCHEMA_PATH.read_text(encoding="utf-8")
+        committed = None
+
+        def initialize_between_check_and_script(*args, **kwargs):
+            nonlocal committed
+            # Interleave another connection after startup's empty check, before
+            # its bootstrap script begins. No threads or timing assumptions.
+            with closing(sqlite3.connect(self.db)) as connection:
+                connection.executescript(schema)
+                connection.execute("UPDATE items SET stock_quantity = 7 WHERE item_id = 1")
+                connection.commit()
+            committed = self.snapshot()
+            return schema
+
+        with patch("backend.server.SCHEMA_PATH") as schema_path, \
+                patch("backend.server.HTTPServer") as listener:
+            schema_path.read_text.side_effect = initialize_between_check_and_script
+            with self.assertRaises(sqlite3.DatabaseError):
+                create_server(port=0, database_path=self.db)
+            listener.assert_not_called()
+        self.assertIsNotNone(committed)
+        self.assertEqual(self.snapshot(), committed)
+
+    def test_v11_startup_only_adds_missing_demo_account(self):
+        from backend.server import initialize_database, verify_password
+        self.make_v11_db()
+        before = self.snapshot()
+        initialize_database(self.db)
+        demo = self.query("SELECT * FROM users WHERE username = 'demo'")[0]
+        self.assertTrue(verify_password("demo123", demo["password_hash"]))
+        self.assertEqual(demo["role"], "admin")
+        # Remove only the expected addition to compare every legacy row/object/version.
+        self.execute("DELETE FROM users WHERE username = 'demo'")
+        self.execute("UPDATE sqlite_sequence SET seq = 2 WHERE name = 'users'")
+        self.assertEqual(self.snapshot(), before)
+
+    def test_v12_restart_preserves_password_stock_and_extra_tables(self):
+        from backend.server import initialize_database, hash_password
+        initialize_database(self.db)
+        self.execute("UPDATE users SET password_hash = ? WHERE username = 'demo'",
+                     (hash_password("changed-password"),))
+        self.execute("UPDATE items SET stock_quantity = 7 WHERE item_id = 1")
+        self.execute("CREATE TABLE notes (content TEXT)")
+        self.execute("INSERT INTO notes VALUES ('keep this extension')")
+        before = self.snapshot()
+        initialize_database(self.db)
+        initialize_database(self.db)
+        self.assertEqual(self.snapshot(), before)
+
+
 class TestDataIntegrity(DatabaseTestCase):
     def setUp(self):
         super().setUp()

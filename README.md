@@ -22,6 +22,10 @@ are still planned.
 | Delivery | Source files, team documentation, Dockerfile and GitHub Actions build/test workflow | Deployment and release automation |
 
 The backend loads `database/schema.sql` into SQLite on first start.
+Automatic initialization requires an unversioned database with no user-defined
+schema objects. An incomplete database or unsupported schema version stops startup
+before the server listens or adds the demo account, preserving existing data.
+Back up and inspect a rejected database; startup does not repair or rebuild it.
 The frontend calls the same API under `/api`. Orders and waybills show the same
 `shipments` records. Creating a waybill deducts stock in one SQLite transaction;
 status options match schema v1.2: `pending`, `shipped`, `delivered`.

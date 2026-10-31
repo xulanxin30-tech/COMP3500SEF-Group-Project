@@ -148,3 +148,28 @@ an official Logbook or submission format.
   from 120 to 115 and changed the same shipment to delivered; direct SQLite checks
   confirmed the sender, status and tracking events. The PR linking this entry
   contains the complete validation commands and CI results.
+
+### TASK-safe-database-startup: Protect existing data during backend startup
+
+- Owner: XIE Jiayan / GeorgeXie2333
+- Contributors / affected module owners: Backend (XIE Jiayan), database
+  (CEN Yin Chi), QA (ZHANGZHIYUAN)
+- Expected result: Startup initializes only an empty, unversioned database.
+  Partial databases and unsupported versions are rejected before demo-user
+  insertion or HTTP listener creation, without rebuilding existing data.
+  Supported v1.1/v1.2 databases remain compatible, and a stale empty check cannot
+  overwrite another initializer's committed data.
+- Acceptance checks: Regression tests compare complete SQL dumps and schema
+  versions after rejected startup; cover each missing application table,
+  users-only, unrelated, view-only and unsupported-version databases; verify
+  legacy compatibility, restart preservation and competing initialization.
+  The full Python suite and frontend API workflow suite pass.
+- Due date: Not yet agreed
+- Next progress update: PR review and CI results
+- Status: Prepared for PR review; completion requires review and merge.
+- Evidence: Nine new startup regression tests pass. All 92 Python tests and
+  five frontend API integration tests passed locally on Python 3.12.14 and
+  Node.js 24.14.0. Startup and recovery instructions are updated in README.md
+  and database/README.md. The PR linking this entry records validation commands.
+- Record location: Kept here because the GitHub integration could not create
+  an Issue in the team repository (HTTP 403).
