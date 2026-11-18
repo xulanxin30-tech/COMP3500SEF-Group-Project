@@ -5,7 +5,7 @@
 -- Load into a DISPOSABLE database only, after the backend has created the
 -- schema and the demo account. Never run against a shared database.
 --
---   sqlite3 "$LMS_DB_PATH" ".read 04-联调基础数据.sql"
+--   sqlite3 "$LMS_DB_PATH" ".read '联调测试数据集/04-联调基础数据.sql'"
 --
 -- Idempotent: rows in the 101-199 ID band are deleted and re-inserted.
 -- Seed rows (1-3) and the startup-created demo account are never touched.
