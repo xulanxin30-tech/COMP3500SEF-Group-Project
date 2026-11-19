@@ -111,8 +111,7 @@ counts re-checked · DB reset · evidence attached. Checklists in `09`.
 ## ⚠️ Risks
 
 R-01 no merchant/driver roles · R-02 no role authorisation · R-03 no status
-order · R-04 not approved or executed · R-05 naming differs from CONTRIBUTING
-examples · R-06 project dates are provisional.
+order · R-04 not approved or executed · R-05 project dates are provisional.
 
 ## ✍️ Ownership
 

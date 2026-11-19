@@ -1,6 +1,6 @@
 {
   "dataset": "COMP3500SEF Logistics Management System - integration test dataset",
-  "folder": "Integration Test Dataset",
+  "folder": "integration-test-dataset",
   "version": "1.0.0",
   "status": "prepared, not executed",
   "schema_baseline": "database/schema.sql v1.2 (PRAGMA user_version = 2)",

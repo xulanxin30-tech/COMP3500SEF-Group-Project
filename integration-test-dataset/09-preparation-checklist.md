@@ -11,7 +11,7 @@
 | Node ≥ 22.12 · `sqlite3` | `node --version`, `sqlite3 --version` |
 | Ports 8000 / 3000 free | no other listener |
 | Disposable `LMS_DB_PATH` | never shared `backend/lms.db` |
-| Branch + SHA | `git status`, `git rev-parse HEAD` |
+| Branch `integration-testing` + SHA | `git status`, `git rev-parse HEAD` |
 
 ## 🚀 Build the baseline
 
@@ -35,7 +35,7 @@ python3 backend/server.py        # use: py -3 backend/server.py  (Windows)
 **3 · Load the dataset (idempotent)**
 
 ```sh
-sqlite3 "$LMS_DB_PATH" ".read '联调测试数据集/04-baseline-data.sql'"
+sqlite3 "$LMS_DB_PATH" ".read 'integration-test-dataset/04-baseline-data.sql'"
 ```
 
 Deletes only IDs 101–199 and re-inserts them in one transaction. Never touches
@@ -44,7 +44,7 @@ seed rows 1–3 or `demo`.
 **4 · Regenerate artefacts (optional)**
 
 ```sh
-python 联调测试数据集/generate_dataset.py
+python integration-test-dataset/generate_dataset.py
 ```
 
 ♻️ Rewrites `04-baseline-data.sql` + `05-baseline-data.json`; commit both
@@ -144,7 +144,7 @@ COMMIT;
 | No status order / no role authorisation → don't assert rejection | A-03, A-04 |
 | `merchant` / `driver` role values are rejected by CHECK | DB-04/05 |
 | Events verified by SQL only; no timeline UI or read API | manual plan |
-| Quote the folder path in shell / SQLite commands | §2 step 3 |
+| Run commands from the repository root | §2 |
 | `docs/PROJECT.md` dates are provisional | project record |
 
 ## ✍️ Ownership

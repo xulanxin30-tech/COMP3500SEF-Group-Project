@@ -1,7 +1,7 @@
 # Integration Test Dataset
 
 > 🧪 **Prepared · not executed** · v1.0.0
-> 🌿 Isolated test branch · 📐 `schema.sql` v1.2 · 🔌 `openapi.yaml` 0.3.0
+> 🌿 Branch `integration-testing` · 📐 `schema.sql` v1.2 · 🔌 `openapi.yaml` 0.3.0
 
 🎯 A fixed, reproducible data baseline for integration testing of the React
 frontend + Python HTTP backend + SQLite v1.2 database. **No case here has been
@@ -54,5 +54,5 @@ All names, phones and addresses are fictional. Password `It@2026Test` and its
 deterministic salts are test-only. Rows use IDs **101–199** with `IT-` prefixes,
 so seed rows (1–3) and `demo` are never touched.
 
-📄 Per `CONTRIBUTING.md`, documents are written in English. Branch and folder
-names follow the team lead's naming request.
+📄 Per `CONTRIBUTING.md`, documents, file names, folder name and branch name
+are all in English.

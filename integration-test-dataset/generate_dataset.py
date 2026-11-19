@@ -3,7 +3,7 @@
 
 Run from the repository root:
 
-    python 联调测试数据集/generate_dataset.py
+    python integration-test-dataset/generate_dataset.py
 
 Writes 04-baseline-data.sql (idempotent SQLite load script) and
 05-baseline-data.json (the same rows as JSON) into this folder.
@@ -139,7 +139,7 @@ def build_sql() -> str:
         "--",
         "-- Load into a DISPOSABLE database only, after the backend created the",
         "-- schema and the demo account. Never run against a shared database.",
-        "--   sqlite3 \"$LMS_DB_PATH\" \".read '联调测试数据集/04-baseline-data.sql'\"",
+        "--   sqlite3 \"$LMS_DB_PATH\" \".read 'integration-test-dataset/04-baseline-data.sql'\"",
         "-- Idempotent: IDs 101-199 are deleted and re-inserted; seed rows and",
         "-- the demo account are never touched.",
         "",
@@ -169,7 +169,7 @@ def build_sql() -> str:
 def build_json() -> str:
     payload = {
         "dataset": "COMP3500SEF Logistics Management System - integration test dataset",
-        "folder": "Integration Test Dataset",
+        "folder": "integration-test-dataset",
         "version": "1.0.0",
         "status": "prepared, not executed",
         "schema_baseline": SCHEMA_BASELINE,
