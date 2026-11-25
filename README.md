@@ -131,6 +131,7 @@ or `python3`, runs `npm ci` with the lockfile, starts both servers and opens
 http://127.0.0.1:3000 after the frontend, backend and API proxy are ready.
 Sign in with `demo` / `demo123`. This starts local development servers, not a
 production deployment.
+For the video demo, see the [named demo account setup](database/README.md#demo-accounts).
 
 Keep the launching terminal open. Press **Enter** or **Ctrl+C** there to stop both
 servers. Startup failures also clean up the processes started by the script;
@@ -138,7 +139,7 @@ logs are saved under `output/startup/`. Ports 8000 and 3000 must be free: the
 script refuses an existing listener instead of reusing it or moving Vite to a
 different port. It binds the local pair to `127.0.0.1` and uses `/api`, temporarily
 overriding `LMS_HOST` and `VITE_API_BASE_URL` and restoring them on exit.
-`LMS_DB_PATH` is still respected; the default database is `backend/lms.db`.
+For regular startup, `LMS_DB_PATH` selects the database, with `backend/lms.db` as the default.
 
 Optional switches:
 

@@ -256,6 +256,21 @@ class TestBackendInitialization(DatabaseTestCase):
         self.execute("UPDATE sqlite_sequence SET seq = 2 WHERE name = 'users'")
         self.assertEqual(self.snapshot(), before)
 
+    def test_named_demo_seed_preserves_existing_users_and_is_idempotent(self):
+        from backend.server import initialize_database
+        self.make_v11_db()
+        self.execute(
+            "INSERT INTO users (username, password_hash, role, phone) VALUES (?, ?, ?, ?)",
+            ("admin", "existing-password-hash", "customer", "+852-90000001"),
+        )
+        admin_query = "SELECT * FROM users WHERE username = 'admin'"
+        original_admin = self.query(admin_query)
+        initialize_database(self.db, named_demo=True)
+        self.assertEqual(self.query(admin_query), original_admin)
+        seeded = self.snapshot()
+        initialize_database(self.db, named_demo=True)
+        self.assertEqual(self.snapshot(), seeded)
+
     def test_v12_restart_preserves_password_stock_and_extra_tables(self):
         from backend.server import initialize_database, hash_password
         initialize_database(self.db)

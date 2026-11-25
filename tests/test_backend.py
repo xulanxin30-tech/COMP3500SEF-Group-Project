@@ -72,6 +72,15 @@ class TestListenAddress(unittest.TestCase):
             with create_server(port=0, database_path=Path(directory) / "lms.db") as server:
                 self.assertEqual(server.socket.getsockname()[0], "0.0.0.0")
 
+    def test_named_demo_accounts_require_loopback(self):
+        with TemporaryDirectory() as directory:
+            demo_db = Path(directory) / "demo.db"
+            with patch.dict(os.environ, {"LMS_HOST": "0.0.0.0", "LMS_NAMED_DEMO_ACCOUNTS": "1"}), \
+                    patch("backend.server.NAMED_DEMO_DATABASE", demo_db):
+                with self.assertRaisesRegex(ValueError, "Named demo accounts require"):
+                    create_server(port=0)
+            self.assertFalse(demo_db.exists())
+
 
 class TestBackendAPI(APIClient, unittest.TestCase):
     @classmethod
@@ -128,12 +137,12 @@ class TestBackendWrites(APIClient, unittest.TestCase):
         self.addCleanup(self.directory.cleanup)
         self.database_path = Path(self.directory.name) / "lms.db"
         self.client = build_opener(ProxyHandler({}))
-        self.start_server()
+        self.start_server(self.database_path)
         self.addCleanup(self.stop_server)
 
-    def start_server(self):
+    def start_server(self, database_path):
         with patch.dict(os.environ, {"LMS_HOST": "127.0.0.1"}):
-            self.server = create_server(port=0, database_path=self.database_path)
+            self.server = create_server(port=0, database_path=database_path)
         self.worker = threading.Thread(
             target=self.server.serve_forever,
             kwargs={"poll_interval": 0.01},
@@ -160,6 +169,34 @@ class TestBackendWrites(APIClient, unittest.TestCase):
     def database_rows(self, query):
         with closing(sqlite3.connect(self.database_path)) as connection:
             return connection.execute(query).fetchall()
+
+    def test_named_demo_accounts_sign_in_from_a_separate_database(self):
+        self.stop_server()
+        demo_db = self.database_path.with_name("demo.db")
+        users_query = "SELECT * FROM users ORDER BY user_id"
+        original_users = self.database_rows(users_query)
+        with patch.dict(os.environ, {
+            "LMS_DB_PATH": str(self.database_path),
+            "LMS_NAMED_DEMO_ACCOUNTS": "1",
+        }), patch("backend.server.NAMED_DEMO_DATABASE", demo_db):
+            self.start_server(database_path=None)
+
+        self.assertEqual(self.server.database_path, demo_db)
+        self.assertEqual(self.server.server_address[0], "127.0.0.1")
+        for username, password, role in (
+            ("admin", "admin123", "admin"),
+            ("zhangsan", "pass1234", "customer"),
+            ("lisi", "pass1234", "customer"),
+            ("wangwu", "pass1234", "customer"),
+        ):
+            with self.subTest(username=username):
+                status, body = self.request(
+                    "/api/auth/login", "POST", {"username": username, "password": password}
+                )
+                self.assertEqual(status, 200)
+                self.assertEqual(body["user"]["username"], username)
+                self.assertEqual(body["user"]["role"], role)
+        self.assertEqual(self.database_rows(users_query), original_users)
 
     def test_write_routes_require_login(self):
         # Requests intentionally carry no body: the HTTP/1.0 server answers
@@ -197,7 +234,7 @@ class TestBackendWrites(APIClient, unittest.TestCase):
         self.assertEqual(self.request("/api/auth/login", "POST",
                                      {"username": "demo", "password": "demo123"})[0], 401)
         self.stop_server()
-        self.start_server()
+        self.start_server(self.database_path)
         status, login = self.request("/api/auth/login", "POST",
                                      {"username": "demo", "password": "changed-password"})
         self.assertEqual(status, 200)
@@ -396,7 +433,7 @@ class TestBackendWrites(APIClient, unittest.TestCase):
             "hub_id": 2, "status": "delivered", "description": "Out for delivery from Central.",
         }, token)[0], 200)
         self.stop_server()
-        self.start_server()
+        self.start_server(self.database_path)
         self.assertEqual(self.request("/api/items")[1][0]["stock_quantity"], 113)
         persisted = self.request("/api/shipments")[1][-1]
         self.assertEqual({key: value for key, value in persisted.items() if key != "updated_at"},

@@ -24,6 +24,38 @@ python database/db_manager.py status     # schema version, row counts, indexes
 `--db PATH` points at another database file (useful for a scratch copy); `LMS_DB_PATH` is
 honoured as well, like the backend.
 
+## Demo accounts
+
+Set `LMS_NAMED_DEMO_ACCOUNTS=1` to add the named accounts for a local demo. The backend
+listens on `127.0.0.1` and uses the dedicated `backend/lms.db.demo` database, even if
+`LMS_DB_PATH` is set. Demo data persists in that file across restarts.
+
+On Windows, `start.ps1` starts the backend and frontend together from the repository root.
+
+```powershell
+$env:LMS_NAMED_DEMO_ACCOUNTS = '1'
+.\start.ps1
+Remove-Item Env:LMS_NAMED_DEMO_ACCOUNTS
+```
+
+On macOS or Linux, start the backend with `LMS_NAMED_DEMO_ACCOUNTS=1 python3 backend/server.py`
+and start the frontend as usual.
+
+| Username | Password | Role |
+| :--- | :--- | :--- |
+| `admin` | `admin123` | admin |
+| `zhangsan` | `pass1234` | customer |
+| `lisi` | `pass1234` | customer |
+| `wangwu` | `pass1234` | customer |
+| `demo` | `demo123` | admin |
+
+Enter the credentials in the sign-in form. The account menu shows the signed-in username
+and role. All signed-in users currently share the same pages and permissions. The
+original `demo` account is also available during regular startup.
+
+The three seeded rows in `schema.sql` (`admin_alan`, `customer_alice`, `courier_chan`)
+populate the tables with placeholder password hashes.
+
 ## When to use which
 
 | Situation | Command |

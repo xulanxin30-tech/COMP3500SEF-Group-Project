@@ -18,6 +18,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 DEFAULT_DATABASE = Path(__file__).resolve().with_name("lms.db")
+NAMED_DEMO_DATABASE = DEFAULT_DATABASE.with_name("lms.db.demo")
 SCHEMA_PATH = Path(__file__).resolve().parent.parent / "database" / "schema.sql"
 REQUIRED_TABLES = {"users", "hubs", "items", "shipments", "shipment_items", "tracking_events"}
 SUPPORTED_SCHEMA_VERSIONS = (0, 1, 2)  # Original v1.1 databases were unversioned.
@@ -25,6 +26,13 @@ SUPPORTED_SCHEMA_VERSIONS = (0, 1, 2)  # Original v1.1 databases were unversione
 # Public local-development account, stored alongside all other SQLite users.
 DEMO_USERNAME = "demo"
 DEMO_PASSWORD = "demo123"
+# Optional identities for the local video demo.
+DEMO_ACCOUNTS = (
+    ("admin", "admin123", "admin", "+852-90000001"),
+    ("zhangsan", "pass1234", "customer", "+852-90000002"),
+    ("lisi", "pass1234", "customer", "+852-90000003"),
+    ("wangwu", "pass1234", "customer", "+852-90000004"),
+)
 MAX_BODY_BYTES = 65536
 MAX_SQLITE_ID = 2**63 - 1
 SHIPMENT_STATUSES = ("pending", "shipped", "delivered")
@@ -69,7 +77,7 @@ def database_connection(database_path):
         connection.close()
 
 
-def initialize_database(database_path):
+def initialize_database(database_path, *, named_demo=False):
     """Bootstrap only empty databases; reject incomplete schemas without writes."""
     with database_connection(database_path) as connection:
         version = connection.execute("PRAGMA user_version").fetchone()[0]
@@ -102,14 +110,20 @@ def initialize_database(database_path):
                                  + ", ".join(sorted(missing))
                                  + ". Back up the database and inspect it with "
                                  "database/db_manager.py verify; startup will not rebuild it.")
-        # Add the account to existing v1.1 databases without resetting any data
-        # or replacing an existing user's password.
-        if connection.execute("SELECT 1 FROM users WHERE username = ?",
-                              (DEMO_USERNAME,)).fetchone() is None:
-            connection.execute(
-                "INSERT INTO users (username, password_hash, role, phone) VALUES (?, ?, ?, ?)",
-                (DEMO_USERNAME, hash_password(DEMO_PASSWORD), "admin", "+852-90000000"),
-            )
+        accounts = ((DEMO_USERNAME, DEMO_PASSWORD, "admin", "+852-90000000"),)
+        if named_demo:
+            accounts += DEMO_ACCOUNTS
+        for username, password, role, phone in accounts:
+            existing = connection.execute(
+                "SELECT 1 FROM users WHERE username = ?", (username,),
+            ).fetchone()
+            if existing is None:
+                # An initializer may have inserted this username after the lookup.
+                connection.execute(
+                    """INSERT INTO users (username, password_hash, role, phone)
+                       VALUES (?, ?, ?, ?) ON CONFLICT(username) DO NOTHING""",
+                    (username, hash_password(password), role, phone),
+                )
 
 
 SHIPMENT_SELECT = """
@@ -422,10 +436,19 @@ class Handler(BaseHTTPRequestHandler):
 
 def create_server(port=8000, database_path=None):
     """Create the API server with a configurable listen address."""
-    path = Path(database_path if database_path is not None
-                else os.environ.get("LMS_DB_PATH", DEFAULT_DATABASE))
-    initialize_database(path)
-    server = HTTPServer((os.environ.get("LMS_HOST", "localhost"), port), Handler)
+    host = os.environ.get("LMS_HOST", "localhost")
+    # Select the dedicated database when the command-line demo is enabled.
+    named_demo = database_path is None and os.environ.get("LMS_NAMED_DEMO_ACCOUNTS") == "1"
+    if named_demo:
+        if host not in ("localhost", "127.0.0.1"):
+            raise ValueError("Named demo accounts require LMS_HOST=127.0.0.1 or localhost")
+        host = "127.0.0.1"
+        path = NAMED_DEMO_DATABASE
+    else:
+        path = Path(database_path if database_path is not None
+                    else os.environ.get("LMS_DB_PATH", DEFAULT_DATABASE))
+    initialize_database(path, named_demo=named_demo)
+    server = HTTPServer((host, port), Handler)
     server.tokens = {}
     server.database_path = path
     return server
