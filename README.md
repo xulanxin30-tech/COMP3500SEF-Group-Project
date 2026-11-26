@@ -8,15 +8,17 @@
 
 ## 📊 Current Status
 
-🚀 The React frontend and Python backend share SQLite persistence for login, inventory, shipment creation and status updates. Remaining logistics modules are still planned.
+🚀 The React frontend and Python backend share SQLite persistence for login, inventory, shipment creation and status updates. The final presentation demonstrates the completed MVP; the remaining logistics modules listed below were deliberately left out of scope.
 
-| Component | Status | Available now | Work still planned |
+| Component | Status | Delivered in the final MVP | Remaining work / scope note |
 | :--- | :---: | :--- | :--- |
-| Frontend | 🟡 In Progress | React/TypeScript screens for sign in, orders, inventory and waybills, connected to Python/SQLite | Remaining logistics modules |
-| Backend | 🟡 In Progress | Python standard-library HTTP server with SQLite users, password hashing and schema v1.2 persistence | Production session management and role permissions |
-| Database | 🟢 Done | SQLite schema v1.2 (`users`, `hubs`, `items`, `shipments`, `shipment_items`, `tracking_events`), Hong Kong seed data, migration and backup tools | Database selection beyond SQLite |
-| Tests | 🟡 In Progress | Python HTTP API tests and freight examples; frontend API workflow tests against Python/SQLite | Automated browser regression tests |
-| Delivery | 🟢 Done | Source files, team documentation, Dockerfile and GitHub Actions build/test workflow | Deployment and release automation |
+| Frontend | 🟢 Done | React/TypeScript screens for sign in, orders, inventory and waybills, connected to Python/SQLite; empty, loading and error states; one-command Windows startup | Out of scope: registration, tracking timeline UI, dispatch, signatures and dashboard |
+| Backend | 🟢 Done | Python standard-library HTTP server with SQLite users, salted PBKDF2 hashes, Bearer-token writes, atomic stock deduction (HTTP 409 on over-stock), three-status flow, tracking events and schema v1.2 persistence | Production session management and role permissions were not in the MVP scope |
+| Database | 🟢 Done | SQLite schema v1.2 (`users`, `hubs`, `items`, `shipments`, `shipment_items`, `tracking_events`), Hong Kong seed data, migration and backup tools | Alternative database engines were not evaluated |
+| Tests | 🟢 Done | 99 Python, 15 frontend and 7 startup tests pass; lint and production build are clean; manual demo cases TC-005 → TC-002 → TC-003 → TC-004 with screenshots; Docker health check via CI | Automated browser regression and registration test TC-001 remain outside the delivered scope |
+| Delivery | 🟢 Done | Source files, team documentation, internal v0.1 release notes, user manual, Dockerfile and GitHub Actions build/test workflow; final presentation recorded and slides published | Production deployment and release automation remain future work |
+
+> ✅ **Final status:** The delivered scope was demonstrated in the final presentation and verified by the [P3 pre-presentation regression report](docs/ui/docs/test/regression-report-p3.md): 99 Python, 15 frontend and 7 startup tests passed, lint and build were clean, and the manual demo flow passed on a fresh database. Docker was checked through CI.
 
 > ⚠️ **Backend Note:** Loads `database/schema.sql` into SQLite on first start. Automatic initialization requires an unversioned database with no user-defined schema objects. An incomplete database or unsupported schema version stops startup before the server listens or adds the demo account, preserving existing data. Back up and inspect a rejected database; startup does not repair or rebuild it.
 
@@ -35,7 +37,9 @@
 - [P2 mockup plan](docs/ui/p2-mockups.md): current screen scope, proposed designs
   and usability/handover checklists; design assets and reviews are pending.
 - [Manual test plan](docs/ui/docs/test/test-cases.md): current workflow cases and
-  future feature blockers; execution results are not yet recorded.
+  future feature blockers; execution results are in the P3 regression report.
+- [P3 regression report](docs/ui/docs/test/regression-report-p3.md): automated and
+  manual results for the final presentation demo flow.
 
 ## 📦 Repository Layout
 
