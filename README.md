@@ -6,6 +6,19 @@
 
 🎯 Goal: A working MVP supported by requirements, design, implementation and testing evidence.
 
+## Final Presentation
+
+The team's final presentation materials for COMP3500SEF are linked below. They are
+hosted on external services, so access depends on Zoom and Canva.
+
+| Material | Link | Description |
+| :--- | :--- | :--- |
+| Presentation video | [Watch the recorded presentation on Zoom](https://zoom.us/clips/share/WHnUWigMSOCpBS0TNUdlYg) | Recording of the group presentation. |
+| Slide deck | [View the final slides on Canva](https://canva.link/doiyjomi719d8z4) | Slides used in the final presentation. |
+
+These links are added on the `final-presentation` branch so the presentation
+materials can be reviewed and then merged into `main`.
+
 ## 📊 Current Status
 
 🚀 The React frontend and Python backend share SQLite persistence for login, inventory, shipment creation and status updates. Remaining logistics modules are still planned.
@@ -24,6 +37,8 @@
 
 ## Documentation
 
+- [Final presentation](#final-presentation): links to the recorded presentation
+  video and the final slide deck.
 - [Contributing guide](CONTRIBUTING.md): task setup, local development, browser
   editing and the branch/PR workflow.
 - [Team Code of Conduct](CODE_OF_CONDUCT.md): proposed responsibilities,
